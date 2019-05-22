@@ -17,14 +17,33 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		PrivateOnly: false,
 	})
     if err != nil {
-        fmt.Println("ListChannels failed:", err)
-        return
+		panic(fmt.Sprint("ListChannels failed:", err))
     }
 
 	sumCapacity := int64(0)
 	sumLocal := int64(0)
 	sumRemote := int64(0)
 	for _, chn := range rsp.Channels {
+
+		rsp2,err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
+			ChanId: chn.ChanId,
+		})
+		if err != nil {
+			panic(fmt.Sprint("GetChanInfo failed:", err))
+		}
+		var policy *lnrpc.RoutingPolicy
+		if rsp2.Node1Pub == chn.RemotePubkey {
+			policy = rsp2.Node2Policy
+		} else {
+			policy = rsp2.Node1Policy
+		}
+		var disabled string
+		if policy.Disabled {
+			disabled = "D"
+		} else {
+			disabled = "E"
+		}
+		
 		lclpct := 100.0 * float64(chn.LocalBalance) / float64(chn.Capacity)
 		
 		var initiator string
@@ -41,7 +60,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 			active = "I"
 		}
 			
-		fmt.Printf("%d %s %10d %8d %8d %4.1f%% %s %s\n",
+		fmt.Printf("%d %s %10d %8d %8d %4.1f%% %s %s %s\n",
 			chn.ChanId,
 			chn.RemotePubkey,
 			chn.Capacity,
@@ -50,6 +69,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 			lclpct,
 			initiator,
 			active,
+			disabled,
 		)
 		sumCapacity += chn.Capacity
 		sumLocal += chn.LocalBalance
