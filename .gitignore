@@ -10,4 +10,5 @@
 *.out
 *.so
 *.test
+/lndtool
 /main

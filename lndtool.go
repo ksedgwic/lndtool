@@ -3,9 +3,11 @@
 package main
 
 import (
-    "context"
+	"context"
+	"flag"
     "fmt"
     "io/ioutil"
+	"os"
     "os/user"
     "path"
 	
@@ -17,6 +19,9 @@ import (
 )
 
 func main() {
+
+	flag.Parse()
+	
     usr, err := user.Current()
     if err != nil {
         fmt.Println("Cannot get current user:", err)
@@ -60,54 +65,17 @@ func main() {
     client := lnrpc.NewLightningClient(conn)
 	ctx := context.Background()
 
-	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
-		ActiveOnly: false,
-		InactiveOnly: false,
-		PublicOnly: false,
-		PrivateOnly: false,
-	})
-    if err != nil {
-        fmt.Println("ListChannels failed:", err)
-        return
-    }
-
-	sumCapacity := int64(0)
-	sumLocal := int64(0)
-	sumRemote := int64(0)
-	for _, chn := range rsp.Channels {
-		lclpct := 100.0 * float64(chn.LocalBalance) / float64(chn.Capacity)
-		
-		var initiator string
-		if chn.Initiator {
-			initiator = "L"
-		} else {
-			initiator = "R"
-		}
-			
-		var active string
-		if chn.Active {
-			active = "A"
-		} else {
-			active = "I"
-		}
-			
-		fmt.Printf("%d %s %10d %8d %8d %4.1f%% %s %s\n",
-			chn.ChanId,
-			chn.RemotePubkey,
-			chn.Capacity,
-			chn.LocalBalance,
-			chn.RemoteBalance,
-			lclpct,
-			initiator,
-			active,
-		)
-		sumCapacity += chn.Capacity
-		sumLocal += chn.LocalBalance
-		sumRemote += chn.RemoteBalance
+	cmd := flag.Args()[0]
+	switch cmd {
+	case "channels": {
+		listChannels(client, ctx)
 	}
-	fmt.Printf("                                                                                      %10d %8d %8d\n",
-		sumCapacity,
-		sumLocal,
-		sumRemote,
-	)
+	case "farside": {
+		farSide(client, ctx)
+	}
+	default: {
+        fmt.Printf("command \"%s\" unknown\n", cmd)
+		os.Exit(1)
+	}
+	}
 }
