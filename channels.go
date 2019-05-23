@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	
     "github.com/lightningnetwork/lnd/lnrpc"
 )
@@ -23,6 +24,9 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 	sumCapacity := int64(0)
 	sumLocal := int64(0)
 	sumRemote := int64(0)
+	sort.SliceStable(rsp.Channels, func(ii, jj int) bool {
+		return rsp.Channels[ii].ChanId < rsp.Channels[jj].ChanId
+	})
 	for _, chn := range rsp.Channels {
 
 		rsp2,err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
