@@ -10,6 +10,16 @@ import (
     "github.com/lightningnetwork/lnd/lnrpc"
 )
 
+func nodeAlias(client lnrpc.LightningClient, ctx context.Context, pubkey string) string {
+	rsp, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+		PubKey: pubkey,
+	})
+	if err != nil {
+		panic(fmt.Sprint("GetChanInfo failed:", err))
+	}
+	return rsp.Node.Alias
+}
+
 func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
 		ActiveOnly: false,
@@ -63,8 +73,10 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		} else {
 			active = "I"
 		}
+
+		alias := nodeAlias(client, ctx, chn.RemotePubkey)
 			
-		fmt.Printf("%d %s %10d %8d %8d %4.1f%% %s %s %s\n",
+		fmt.Printf("%d %s %10d %8d %8d %4.1f%% %s %s %s %s\n",
 			chn.ChanId,
 			chn.RemotePubkey,
 			chn.Capacity,
@@ -74,6 +86,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 			initiator,
 			active,
 			disabled,
+			alias,
 		)
 		sumCapacity += chn.Capacity
 		sumLocal += chn.LocalBalance
