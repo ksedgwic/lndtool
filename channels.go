@@ -79,7 +79,25 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		sumLocal += chn.LocalBalance
 		sumRemote += chn.RemoteBalance
 	}
-	fmt.Printf("                                                                                      %10d %8d %8d\n",
+
+	rsp2, err := client.PendingChannels(ctx, &lnrpc.PendingChannelsRequest{})
+    if err != nil {
+		panic(fmt.Sprint("PendingChannels failed:", err))
+    }
+	for _, chn2 := range rsp2.PendingOpenChannels {
+		fmt.Printf("                   %s %10d %8d %8d\n",
+			chn2.Channel.RemoteNodePub,
+			chn2.Channel.Capacity,
+			chn2.Channel.LocalBalance,
+			chn2.Channel.RemoteBalance,
+		)
+		sumCapacity += chn2.Channel.Capacity
+		sumLocal += chn2.Channel.LocalBalance
+		sumRemote += chn2.Channel.RemoteBalance
+	}
+	
+	fmt.Printf("%2d                                                                                    %10d %8d %8d\n",
+		len(rsp.Channels) + len(rsp2.PendingOpenChannels),
 		sumCapacity,
 		sumLocal,
 		sumRemote,
