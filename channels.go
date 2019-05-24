@@ -86,7 +86,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		alias := nodeAlias(client, ctx, chn.RemotePubkey)
 		logRmtCap := math.Log10(float64(rmtCap))
 			
-		str := fmt.Sprintf("%d %s %10d %8d %8d %4.1f%% %s %s %s %3.1f %s",
+		str := fmt.Sprintf("%d %s %9d %9d %9d %4.1f%% %s %s %s %3.1f %s",
 			chn.ChanId,
 			chn.RemotePubkey,
 			chn.Capacity,
@@ -118,7 +118,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		panic(fmt.Sprint("PendingChannels failed:", err))
     }
 	for _, chn2 := range rsp2.PendingOpenChannels {
-		fmt.Printf("                   %s %10d %8d %8d\n",
+		fmt.Printf("                   %s %9d %9d %9d\n",
 			chn2.Channel.RemoteNodePub,
 			chn2.Channel.Capacity,
 			chn2.Channel.LocalBalance,
@@ -129,7 +129,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		sumRemote += chn2.Channel.RemoteBalance
 	}
 	
-	fmt.Printf("%2d                                                                                    %10d %8d %8d\n",
+	fmt.Printf("%2d                                                                                    %9d %9d %9d\n",
 		len(rsp.Channels) + len(rsp2.PendingOpenChannels),
 		sumCapacity,
 		sumLocal,
