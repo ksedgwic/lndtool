@@ -5,8 +5,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	
+	"github.com/gookit/color"
     "github.com/lightningnetwork/lnd/lnrpc"
 )
 
@@ -38,8 +40,15 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		return rsp.Channels[ii].ChanId < rsp.Channels[jj].ChanId
 	})
 	for _, chn := range rsp.Channels {
-
-		rsp2,err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
+		rsp1, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+			PubKey: chn.RemotePubkey,
+		})
+		if err != nil {
+			panic(fmt.Sprint("GetNodeInfo failed:", err))
+		}
+		rmtCap := rsp1.TotalCapacity
+		
+		rsp2, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
 			ChanId: chn.ChanId,
 		})
 		if err != nil {
@@ -75,8 +84,9 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		}
 
 		alias := nodeAlias(client, ctx, chn.RemotePubkey)
+		logRmtCap := math.Log10(float64(rmtCap))
 			
-		fmt.Printf("%d %s %10d %8d %8d %4.1f%% %s %s %s %s\n",
+		str := fmt.Sprintf("%d %s %10d %8d %8d %4.1f%% %s %s %s %3.1f %s",
 			chn.ChanId,
 			chn.RemotePubkey,
 			chn.Capacity,
@@ -86,8 +96,18 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 			initiator,
 			active,
 			disabled,
+			logRmtCap,
 			alias,
 		)
+
+		if policy.Disabled {
+			color.Red.Println(str)
+		} else if !chn.Active {
+			color.Yellow.Println(str)
+		} else {
+			color.Black.Println(str)
+		}
+		
 		sumCapacity += chn.Capacity
 		sumLocal += chn.LocalBalance
 		sumRemote += chn.RemoteBalance
