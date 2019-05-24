@@ -6,6 +6,7 @@ import (
 	"sort"
     "context"
     "fmt"
+	"math"
 	
     "github.com/lightningnetwork/lnd/lnrpc"
 )
@@ -164,11 +165,11 @@ func farSide(client lnrpc.LightningClient, ctx context.Context) {
 	}
 	sort.Sort(ByUtility(selected))
 	for _, nn := range selected {
-		fmt.Printf("%s %9.2f %2d [%10d, %3d]\n",
+		fmt.Printf("%s %9.2f %2d [%4.2f, %3d]\n",
 			nn.LightningNode.PubKey,
 			nn.CumulativeFee,
 			nn.NumHops,
-			nn.Capacity(),
+			math.Log10(float64(nn.Capacity())),
 			nn.NumChan())
 	}
 }
