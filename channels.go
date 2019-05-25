@@ -12,6 +12,12 @@ import (
     "github.com/lightningnetwork/lnd/lnrpc"
 )
 
+func abbrevPubKey(pubkey string) string {
+	// ll := len(pubkey)
+	// return pubkey[0:4] + ".." + pubkey[ll-4:ll]
+	return pubkey
+}
+
 func nodeAlias(client lnrpc.LightningClient, ctx context.Context, pubkey string) string {
 	rsp, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
 		PubKey: pubkey,
@@ -38,7 +44,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		panic(fmt.Sprint("ListChannels failed:", err))
     }
 
-	color.Bold.Println("ChanId              Capacity     Local    Remote  Imbalance Flags PubKey                                                             Log Alias")
+	color.Bold.Println("ChanId             Flg  Capacity     Local    Remote  Imbalance PubKey                                                             Log Alias")
 		
 	sumCapacity := int64(0)
 	sumLocal := int64(0)
@@ -92,16 +98,16 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		logRmtCap := math.Log10(float64(rmtCap))
 		imbalance := chn.LocalBalance -
 			((chn.LocalBalance + chn.RemoteBalance) / 2)
-		str := fmt.Sprintf("%d %9d %9d %9d %10d %s %s %s %s %3.1f %s",
+		str := fmt.Sprintf("%d %s%s%s %9d %9d %9d %10d %s %3.1f %s",
 			chn.ChanId,
+			initiator,
+			active,
+			disabled,
 			chn.Capacity,
 			chn.LocalBalance,
 			chn.RemoteBalance,
 			imbalance,
-			initiator,
-			active,
-			disabled,
-			chn.RemotePubkey,
+			abbrevPubKey(chn.RemotePubkey),
 			logRmtCap,
 			alias,
 		)
@@ -124,12 +130,12 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		panic(fmt.Sprint("PendingChannels failed:", err))
     }
 	for _, chn2 := range rsp2.PendingOpenChannels {
-		fmt.Printf("                    %9d %9d %9d                  %s                          %3.1f\n",
+		fmt.Printf("                        %9d %9d %9d            %s                          %3.1f\n",
 			chn2.Channel.Capacity,
 			chn2.Channel.LocalBalance,
 			chn2.Channel.RemoteBalance,
+			abbrevPubKey(chn2.Channel.RemoteNodePub),
 			math.Log10(float64(chn2.Channel.Capacity)),
-			chn2.Channel.RemoteNodePub,
 		)
 		sumCapacity += chn2.Channel.Capacity
 		sumLocal += chn2.Channel.LocalBalance
@@ -138,13 +144,13 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 	
 	imbalance := sumLocal - ((sumLocal + sumRemote) / 2)
 	
-	color.Bold.Printf("%2d                 %9d %9d %9d %10d       %s %3.1f %s\n",
+	color.Bold.Printf("%2d                     %9d %9d %9d %10d %s %3.1f %s\n",
 		len(rsp.Channels) + len(rsp2.PendingOpenChannels),
 		sumCapacity,
 		sumLocal,
 		sumRemote,
 		imbalance,
-		info.IdentityPubkey,
+		abbrevPubKey(info.IdentityPubkey),
 		math.Log10(float64(sumCapacity)),
 		info.Alias,
 	)
