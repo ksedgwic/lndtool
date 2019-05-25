@@ -67,12 +67,9 @@ func main() {
 
 	cmd := flag.Args()[0]
 	switch cmd {
-	case "channels": {
-		listChannels(client, ctx)
-	}
-	case "farside": {
-		farSide(client, ctx)
-	}
+	case "channels": { listChannels(client, ctx) }
+	case "farside": { farSide(client, ctx) }
+	case "rebalance": { rebalance(client, ctx, flag.Args()[1:4]) }
 	default: {
         fmt.Printf("command \"%s\" unknown\n", cmd)
 		os.Exit(1)
