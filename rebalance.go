@@ -13,6 +13,18 @@ import (
     "github.com/lightningnetwork/lnd/lnrpc"
 )
 
+func hopPolicy(client lnrpc.LightningClient, ctx context.Context, chanId uint64, dstNode string) *lnrpc.RoutingPolicy {
+	chanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{ChanId: chanId})
+	if err != nil {
+		panic(fmt.Sprintf("last GetChanInfo failed:", err))
+	}
+	if chanInfo.Node1Pub == dstNode {
+		return chanInfo.Node2Policy
+	} else {
+		return chanInfo.Node1Policy
+	}
+}
+
 func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string) {
 	amt, err := strconv.Atoi(args[0])
 	if err != nil {
@@ -77,8 +89,6 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 				Fixed: feeLimitFixed,
 			},
 		},
-		IgnoredNodes: [][]byte{},
-		IgnoredEdges: []*lnrpc.EdgeLocator{{}},
 		SourcePubKey: srcPubKey,
 	})
     if err != nil {
@@ -87,10 +97,19 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 
 	// debug: dump the routes 
 	for _, route := range rsp.Routes {
-		fmt.Printf("%d\n", route.TotalFees)
-		for _, hop := range route.Hops {
-			fmt.Printf("%d %s %d\n", hop.ChanId, hop.PubKey, hop.Fee)
+		fmt.Println()
+		for ndx, hop := range route.Hops {
+			// Is this the last hop in the partial route?
+			policy := hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
+			if ndx == len(route.Hops) - 1 {
+				// Add in the fees for the last hop (since we are adding another)
+				hop.Fee = (policy.FeeBaseMsat +
+					(policy.FeeRateMilliMsat * int64(amt) / 1000)) / 1000
+				route.TotalFees += hop.Fee
+			}
+			fmt.Printf("%d %s %6d %5d\n", hop.ChanId, hop.PubKey, hop.Fee, policy.TimeLockDelta)
 		}
+		fmt.Printf("                                                                                      %6d %5d\n", route.TotalFees, route.TotalTimeLock - info.BlockHeight)
 	}
 
 	os.Exit(0)
