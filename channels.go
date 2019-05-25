@@ -38,7 +38,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		panic(fmt.Sprint("ListChannels failed:", err))
     }
 
-	color.Bold.Println("ChanId             PubKey                                                              Capacity     Local    Remote    Balance Flags Log Alias")
+	color.Bold.Println("ChanId              Capacity     Local    Remote  Imbalance Flags PubKey                                                             Log Alias")
 		
 	sumCapacity := int64(0)
 	sumLocal := int64(0)
@@ -90,18 +90,18 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 
 		alias := nodeAlias(client, ctx, chn.RemotePubkey)
 		logRmtCap := math.Log10(float64(rmtCap))
-		balance := chn.LocalBalance -
+		imbalance := chn.LocalBalance -
 			((chn.LocalBalance + chn.RemoteBalance) / 2)
-		str := fmt.Sprintf("%d %s %9d %9d %9d %10d %s %s %s %3.1f %s",
+		str := fmt.Sprintf("%d %9d %9d %9d %10d %s %s %s %s %3.1f %s",
 			chn.ChanId,
-			chn.RemotePubkey,
 			chn.Capacity,
 			chn.LocalBalance,
 			chn.RemoteBalance,
-			balance,
+			imbalance,
 			initiator,
 			active,
 			disabled,
+			chn.RemotePubkey,
 			logRmtCap,
 			alias,
 		)
@@ -124,26 +124,27 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		panic(fmt.Sprint("PendingChannels failed:", err))
     }
 	for _, chn2 := range rsp2.PendingOpenChannels {
-		fmt.Printf("                   %s %9d %9d %9d                  %3.1f\n",
-			chn2.Channel.RemoteNodePub,
+		fmt.Printf("                    %9d %9d %9d                  %s                          %3.1f\n",
 			chn2.Channel.Capacity,
 			chn2.Channel.LocalBalance,
 			chn2.Channel.RemoteBalance,
 			math.Log10(float64(chn2.Channel.Capacity)),
+			chn2.Channel.RemoteNodePub,
 		)
 		sumCapacity += chn2.Channel.Capacity
 		sumLocal += chn2.Channel.LocalBalance
 		sumRemote += chn2.Channel.RemoteBalance
 	}
 	
-	balance := sumLocal - ((sumLocal + sumRemote) / 2)
+	imbalance := sumLocal - ((sumLocal + sumRemote) / 2)
 	
-	color.Bold.Printf("%2d                                                                                    %9d %9d %9d %10d       %3.1f %s\n",
+	color.Bold.Printf("%2d                 %9d %9d %9d %10d       %s %3.1f %s\n",
 		len(rsp.Channels) + len(rsp2.PendingOpenChannels),
 		sumCapacity,
 		sumLocal,
 		sumRemote,
-		balance,
+		imbalance,
+		info.IdentityPubkey,
 		math.Log10(float64(sumCapacity)),
 		info.Alias,
 	)
