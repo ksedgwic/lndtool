@@ -60,6 +60,23 @@ func routeStr(info *lnrpc.GetInfoResponse, route *lnrpc.Route) string {
 	)
 }
 
+func dumpRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
+	for ndx, hop := range route.Hops {
+
+		sndPolicy, rcvPolicy :=
+			hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
+
+		pstr := ""
+		if ndx != 0 {
+			pstr = policyStr(info, sndPolicy, rcvPolicy)
+		}
+		
+		fmt.Printf("%s %s\n", hopStr(info, hop), pstr)
+	}
+	fmt.Printf("%s\n", routeStr(info, route))
+	fmt.Println()
+}
+
 func repriceRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
 	ll := len(route.Hops)
 	
@@ -202,6 +219,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 	feeLimitPercent := feeLimit * 100
 	feeLimitFixed := int64(float64(amt) * (feeLimitPercent / 100))
 	fmt.Printf("limit fee rate to %f, %d sat\n", feeLimit, feeLimitFixed)
+	fmt.Println()
 	
 	rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
 		PubKey: dstPubKey,
@@ -217,6 +235,8 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 		panic(fmt.Sprintf("QueryRoutes failed:", err))
     }
 
+	economicRoutes := []*lnrpc.Route{}
+	
 	for _, route := range rsp.Routes {
 
 		// Prepend the initial hop from us through the src channel
@@ -249,25 +269,21 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 		
 		repriceRoute(client, ctx, info, route, amt)
 		
-		fmt.Println()
-		for ndx, hop := range route.Hops {
-
-			sndPolicy, rcvPolicy :=
-				hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
-
-			pstr := ""
-			if ndx != 0 {
-				pstr = policyStr(info, sndPolicy, rcvPolicy)
-			}
-			
-			fmt.Printf("%s %s\n", hopStr(info, hop), pstr)
-		}
-		fmt.Printf("%s\n", routeStr(info, route))
+		dumpRoute(client, ctx, info, route)
 
 		checkRoute(client, ctx, info, route)
+
+		if (route.TotalFeesMsat / 1000) <= feeLimitFixed {
+			economicRoutes = append(economicRoutes, route)
+		}
 	}
 
-	os.Exit(0)
+	if len(economicRoutes) == 0 {
+		fmt.Println("no routes inside fee limit")
+		os.Exit(1)
+	} else {
+		fmt.Printf("found %d economic routes\n", len(economicRoutes))
+	}
 	
 	// Generate an invoice.
 	preimage := make([]byte, 32)
@@ -276,21 +292,31 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 		panic(fmt.Sprintf("unable to generate preimage:", err))
 	}
 	invoice := &lnrpc.Invoice{
-		Memo:      "rebalancing",
+		Memo: fmt.Sprintf("rebalance %d %s %s", args[0], args[1], args[2]),
 		RPreimage: preimage,
 		Value:     amt,
 	}
 	ctxt, _ := context.WithTimeout(
-		context.Background(), time.Second * 30,
+		context.Background(), time.Second * 300,
 	)
-	rsp2, err := client.AddInvoice(ctxt, invoice)
+	invoiceRsp, err := client.AddInvoice(ctxt, invoice)
 	if err != nil {
 		panic(fmt.Sprintf("unable to add invoice:", err))
 	}
-	_ = rsp2
-	
-	// Just use the first route for now.
 
-	// Add the first and last hops.
-	
+	for _, route := range(economicRoutes) {
+
+		fmt.Println("TRYING:")
+		dumpRoute(client, ctx, info, route)
+		
+		sendRsp, err := client.SendToRouteSync(ctxt, &lnrpc.SendToRouteRequest{
+			PaymentHash: invoiceRsp.RHash,
+			Route: route,
+		})
+		if err != nil {
+			panic(fmt.Sprintf("SendToRouteSync failed:", err))
+		}
+		fmt.Println(sendRsp)
+		os.Exit(0)
+	}
 }
