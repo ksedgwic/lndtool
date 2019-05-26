@@ -60,6 +60,49 @@ func routeStr(info *lnrpc.GetInfoResponse, route *lnrpc.Route) string {
 	)
 }
 
+func repriceRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
+	ll := len(route.Hops)
+	
+	sumDelta := uint32(9)
+	lastDelta := uint32(0)
+	
+	sumFeeMsat := int64(0)
+	lastFeeMsat := int64(0)
+
+	amtToFwdMsat := amt * 1000
+	
+	for ndx := ll - 1; ndx >= 0; ndx-- {
+		hop := route.Hops[ndx]
+		sndPolicy, _ := hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
+
+		hop.Expiry = info.BlockHeight + sumDelta
+		
+		if ndx != ll - 1 {
+			sumDelta += lastDelta
+		}
+		
+		lastDelta = sndPolicy.TimeLockDelta
+
+		hop.FeeMsat = lastFeeMsat
+		hop.Fee = lastFeeMsat / 1000
+		hop.AmtToForwardMsat = amtToFwdMsat
+		hop.AmtToForward = amtToFwdMsat / 1000
+
+		amtToFwdMsat += lastFeeMsat
+		sumFeeMsat += lastFeeMsat
+		
+		lastFeeMsat =
+			sndPolicy.FeeBaseMsat +
+			(hop.AmtToForwardMsat * sndPolicy.FeeRateMilliMsat) / 1000000
+	}
+	
+	route.TotalTimeLock = info.BlockHeight + sumDelta
+	route.TotalFeesMsat = sumFeeMsat
+	route.TotalFees = sumFeeMsat / 1000
+	route.TotalAmtMsat = (amt * 1000) + sumFeeMsat
+	route.TotalAmt = ((amt * 1000) + sumFeeMsat) / 1000
+}
+
 func checkRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	ll := len(route.Hops)
 	
@@ -73,24 +116,14 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.G
 		hop := route.Hops[ndx]
 		sndPolicy, _ := hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
 
-		if ndx == ll - 1 {
-			// Last hop
-			if hop.Expiry - info.BlockHeight != sumDelta {
-				panic(fmt.Sprintf("bad expiry on hop %d", ndx))
-			}
-		} else if ndx == ll - 2 {
-			// Second to last hop
-			if hop.Expiry - info.BlockHeight != sumDelta {
-				panic(fmt.Sprintf("bad expiry on hop %d", ndx))
-			}
-			sumDelta += lastDelta
-		} else {
-			// Prior hops
-			if hop.Expiry - info.BlockHeight != sumDelta {
-				panic(fmt.Sprintf("bad expiry on hop %d", ndx))
-			}
+		if hop.Expiry - info.BlockHeight != sumDelta {
+			panic(fmt.Sprintf("bad expiry on hop %d", ndx))
+		}
+		
+		if ndx != ll - 1 {
 			sumDelta += lastDelta
 		}
+
 		lastDelta = sndPolicy.TimeLockDelta
 
 		if hop.FeeMsat != lastFeeMsat {
@@ -109,10 +142,11 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.G
 }
 
 func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string) {
-	amt, err := strconv.Atoi(args[0])
+	amti, err := strconv.Atoi(args[0])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse amount:", err))
 	}
+	amt := int64(amti)
 	srcChanId, err := strconv.Atoi(args[1])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse srcChanId:", err))
@@ -166,20 +200,50 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 	
 	rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
 		PubKey: dstPubKey,
-		Amt: int64(amt),
+		Amt: amt,
 		FeeLimit: &lnrpc.FeeLimit{
 			Limit: &lnrpc.FeeLimit_Fixed{
 				Fixed: feeLimitFixed,
 			},
 		},
-		// SourcePubKey: srcPubKey,
+		SourcePubKey: srcPubKey,
 	})
     if err != nil {
 		panic(fmt.Sprintf("QueryRoutes failed:", err))
     }
 
-	// debug: dump the routes 
 	for _, route := range rsp.Routes {
+
+		// Prepend the initial hop from us through the src channel
+		hop0 := &lnrpc.Hop{
+			ChanId: uint64(srcChanId),
+			ChanCapacity: srcChanInfo.Capacity,
+			AmtToForward: amt,
+			PubKey: srcPubKey,
+			// We will set all of these when we "reprice" the route.
+			// Fee:
+			// Expiry:
+			// AmtToForwardMsat:
+			// FeeMSat:
+		}
+		route.Hops = append([]*lnrpc.Hop{ hop0 }, route.Hops...)
+
+		// Append the final hop back to us through the dst channel
+		hopN := &lnrpc.Hop{
+			ChanId: uint64(dstChanId),
+			ChanCapacity: dstChanInfo.Capacity,
+			AmtToForward: amt,
+			PubKey: ourPubKey,
+			// We will set all of these when we "reprice" the route.
+			// Fee:
+			// Expiry:
+			// AmtToForwardMsat:
+			// FeeMSat:
+		}
+		route.Hops = append(route.Hops, hopN)
+		
+		repriceRoute(client, ctx, info, route, amt)
+		
 		fmt.Println()
 		for ndx, hop := range route.Hops {
 
@@ -209,7 +273,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 	invoice := &lnrpc.Invoice{
 		Memo:      "rebalancing",
 		RPreimage: preimage,
-		Value:     int64(amt),
+		Value:     amt,
 	}
 	ctxt, _ := context.WithTimeout(
 		context.Background(), time.Second * 30,
