@@ -69,7 +69,7 @@ func main() {
 	switch cmd {
 	case "channels": { listChannels(client, ctx) }
 	case "farside": { farSide(client, ctx) }
-	case "rebalance": { rebalance(client, ctx, flag.Args()[1:4]) }
+	case "rebalance": { rebalance(client, ctx, flag.Args()[1:]) }
 	default: {
         fmt.Printf("command \"%s\" unknown\n", cmd)
 		os.Exit(1)

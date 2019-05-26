@@ -156,6 +156,14 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 		panic(fmt.Sprintf("failed to parse dstChanId:", err))
 	}
 
+	feeLimit := 0.0001   // one basis point default
+	if len(args) > 3 {
+		feeLimit, err = strconv.ParseFloat(args[3], 64)
+		if err != nil {
+			panic(fmt.Sprintf("failed to parse feeLimit:", err))
+		}
+	}
+	
 	// What is our own PubKey?
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
     if err != nil {
@@ -191,12 +199,9 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 		dstPubKey = dstChanInfo.Node1Pub
 	}
 
-	fmt.Printf("%d -> %s -> ... -> %s -> %d\n",
-		srcChanId, srcPubKey, dstPubKey, dstChanId)
-
-	feeLimitPercent := 0.01	// basis points
+	feeLimitPercent := feeLimit * 100
 	feeLimitFixed := int64(float64(amt) * (feeLimitPercent / 100))
-	fmt.Printf("using feeLimitFixed %d\n", feeLimitFixed)
+	fmt.Printf("limit fee rate to %f, %d sat\n", feeLimit, feeLimitFixed)
 	
 	rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
 		PubKey: dstPubKey,
