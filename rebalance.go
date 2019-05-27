@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	// "encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -77,10 +78,12 @@ func dumpRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.Ge
 	fmt.Println()
 }
 
+var finalCLTVDelta = uint32(144)
+
 func repriceRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
 	ll := len(route.Hops)
 	
-	sumDelta := uint32(9)
+	sumDelta := uint32(finalCLTVDelta)
 	lastDelta := uint32(0)
 	
 	sumFeeMsat := int64(0)
@@ -123,7 +126,7 @@ func repriceRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc
 func checkRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	ll := len(route.Hops)
 	
-	sumDelta := uint32(9)
+	sumDelta := uint32(finalCLTVDelta)
 	lastDelta := uint32(0)
 	
 	sumFeeMsat := int64(0)
@@ -220,7 +223,8 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 	feeLimitFixed := int64(float64(amt) * (feeLimitPercent / 100))
 	fmt.Printf("limit fee rate to %f, %d sat\n", feeLimit, feeLimitFixed)
 	fmt.Println()
-	
+
+	fmt.Println("querying possible routes")
 	rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
 		PubKey: dstPubKey,
 		Amt: amt,
@@ -285,6 +289,8 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 		fmt.Printf("found %d economic routes\n", len(economicRoutes))
 	}
 	
+	fmt.Println("generating invoice")
+	
 	// Generate an invoice.
 	preimage := make([]byte, 32)
 	_, err = rand.Read(preimage)
@@ -308,15 +314,35 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 
 		fmt.Println("TRYING:")
 		dumpRoute(client, ctx, info, route)
-		
-		sendRsp, err := client.SendToRouteSync(ctxt, &lnrpc.SendToRouteRequest{
+
+		req := &lnrpc.SendToRouteRequest{
 			PaymentHash: invoiceRsp.RHash,
 			Route: route,
-		})
-		if err != nil {
-			panic(fmt.Sprintf("SendToRouteSync failed:", err))
 		}
+
+		stream, err := client.SendToRoute(ctxt)
+		if err != nil {
+			panic(fmt.Sprintf("SendToRoute failed:", err))
+		}
+
+		if err := stream.Send(req); err != nil {
+			panic(fmt.Sprintf("stream Send failed:", err))
+		}
+
+		sendRsp, err := stream.Recv()
+		if err != nil {
+			panic(fmt.Sprintf("stream Recv failed:", err))
+		}
+		
 		fmt.Println(sendRsp)
-		os.Exit(0)
+
+		if sendRsp.PaymentError == "" {
+			os.Exit(0)
+		}
+		
+		time.Sleep(1 * time.Second)
 	}
+
+	fmt.Println("failed to route payment")
+	os.Exit(1)
 }
