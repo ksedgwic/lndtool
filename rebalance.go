@@ -340,7 +340,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 			os.Exit(0)
 		}
 		
-		time.Sleep(1 * time.Second)
+		// time.Sleep(1 * time.Second)
 	}
 
 	fmt.Println("failed to route payment")
