@@ -14,7 +14,13 @@ import (
     "github.com/lightningnetwork/lnd/lnrpc"
 )
 
-func hopPolicy(client lnrpc.LightningClient, ctx context.Context, chanId uint64, dstNode string) (*lnrpc.RoutingPolicy, *lnrpc.RoutingPolicy) {
+// When true, don't add the first and last hops to the routes and quit
+// after displaying the lnd priced route.
+//
+var feeDebug = false
+
+func hopPolicy(client lnrpc.LightningClient, ctx context.Context,
+	chanId uint64, dstNode string) (*lnrpc.RoutingPolicy, *lnrpc.RoutingPolicy) {
 	chanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{ChanId: chanId})
 	if err != nil {
 		panic(fmt.Sprintf("last GetChanInfo failed:", err))
@@ -39,7 +45,8 @@ func hopStr(info *lnrpc.GetInfoResponse, hop *lnrpc.Hop) string {
 	)
 }
 
-func policyStr(info *lnrpc.GetInfoResponse, sndPolicy *lnrpc.RoutingPolicy, rcvPolicy *lnrpc.RoutingPolicy) string {
+func policyStr(info *lnrpc.GetInfoResponse,
+	sndPolicy *lnrpc.RoutingPolicy, rcvPolicy *lnrpc.RoutingPolicy) string {
 	return fmt.Sprintf("%7d %4d %4d",
 		sndPolicy.FeeBaseMsat,
 		sndPolicy.FeeRateMilliMsat,
@@ -61,18 +68,27 @@ func routeStr(info *lnrpc.GetInfoResponse, route *lnrpc.Route) string {
 	)
 }
 
-func dumpRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
+func dumpRoute(client lnrpc.LightningClient, ctx context.Context,
+	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	for ndx, hop := range route.Hops {
+
+		nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+			PubKey: hop.PubKey,
+		})
+		if err != nil {
+			panic(fmt.Sprintf("GetNodeInfo failed[1]:", err))
+		}
+		alias := nodeInfo.Node.Alias
 
 		sndPolicy, rcvPolicy :=
 			hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
 
-		pstr := ""
+		pstr := "                 "
 		if ndx != 0 {
 			pstr = policyStr(info, sndPolicy, rcvPolicy)
 		}
 		
-		fmt.Printf("%s %s\n", hopStr(info, hop), pstr)
+		fmt.Printf("%s %s %s\n", hopStr(info, hop), pstr, alias)
 	}
 	fmt.Printf("%s\n", routeStr(info, route))
 	fmt.Println()
@@ -80,7 +96,9 @@ func dumpRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.Ge
 
 var finalCLTVDelta = uint32(144)
 
-func repriceRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
+func repriceRoute(
+	client lnrpc.LightningClient, ctx context.Context,
+	info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
 	ll := len(route.Hops)
 	
 	sumDelta := uint32(finalCLTVDelta)
@@ -123,7 +141,8 @@ func repriceRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc
 	route.TotalAmt = ((amt * 1000) + sumFeeMsat) / 1000
 }
 
-func checkRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
+func checkRoute(client lnrpc.LightningClient, ctx context.Context,
+	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	ll := len(route.Hops)
 	
 	sumDelta := uint32(finalCLTVDelta)
@@ -147,11 +166,14 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.G
 		lastDelta = sndPolicy.TimeLockDelta
 
 		if hop.FeeMsat != lastFeeMsat {
-			panic(fmt.Sprintf("bad fee on hop %d, saw %d, expected %d", ndx, lastFeeMsat, hop.FeeMsat))
+			panic(fmt.Sprintf("bad fee on hop %d, saw %d, expected %d",
+				ndx, lastFeeMsat, hop.FeeMsat))
 		}
 		sumFeeMsat += lastFeeMsat
 		
-		lastFeeMsat = sndPolicy.FeeBaseMsat + (hop.AmtToForwardMsat * sndPolicy.FeeRateMilliMsat) / 1000000
+		lastFeeMsat =
+			sndPolicy.FeeBaseMsat +
+			(hop.AmtToForwardMsat * sndPolicy.FeeRateMilliMsat) / 1000000
 	}
 	if route.TotalTimeLock - info.BlockHeight != sumDelta {
 		panic(fmt.Sprintf("bad route total"))
@@ -161,7 +183,8 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context, info *lnrpc.G
 	}
 }
 
-func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string) {
+func rebalance(client lnrpc.LightningClient, ctx context.Context,
+	args []string) {
 	amti, err := strconv.Atoi(args[0])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse amount:", err))
@@ -234,51 +257,55 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 			},
 		},
 		SourcePubKey: srcPubKey,
+		FinalCltvDelta: int32(finalCLTVDelta),
 	})
     if err != nil {
 		panic(fmt.Sprintf("QueryRoutes failed:", err))
     }
 
 	economicRoutes := []*lnrpc.Route{}
-	
 	for _, route := range rsp.Routes {
 
-		// Prepend the initial hop from us through the src channel
-		hop0 := &lnrpc.Hop{
-			ChanId: uint64(srcChanId),
-			ChanCapacity: srcChanInfo.Capacity,
-			AmtToForward: amt,
-			PubKey: srcPubKey,
-			// We will set all of these when we "reprice" the route.
-			// Fee:
-			// Expiry:
-			// AmtToForwardMsat:
-			// FeeMSat:
-		}
-		route.Hops = append([]*lnrpc.Hop{ hop0 }, route.Hops...)
+		if !feeDebug {
+			// Prepend the initial hop from us through the src channel
+			hop0 := &lnrpc.Hop{
+				ChanId: uint64(srcChanId),
+				ChanCapacity: srcChanInfo.Capacity,
+				AmtToForward: amt,
+				PubKey: srcPubKey,
+				// We will set all of these when we "reprice" the route.
+				// Fee:
+				// Expiry:
+				// AmtToForwardMsat:
+				// FeeMSat:
+			}
+			route.Hops = append([]*lnrpc.Hop{ hop0 }, route.Hops...)
 
-		// Append the final hop back to us through the dst channel
-		hopN := &lnrpc.Hop{
-			ChanId: uint64(dstChanId),
-			ChanCapacity: dstChanInfo.Capacity,
-			AmtToForward: amt,
-			PubKey: ourPubKey,
-			// We will set all of these when we "reprice" the route.
-			// Fee:
-			// Expiry:
-			// AmtToForwardMsat:
-			// FeeMSat:
+			// Append the final hop back to us through the dst channel
+			hopN := &lnrpc.Hop{
+				ChanId: uint64(dstChanId),
+				ChanCapacity: dstChanInfo.Capacity,
+				AmtToForward: amt,
+				PubKey: ourPubKey,
+				// We will set all of these when we "reprice" the route.
+				// Fee:
+				// Expiry:
+				// AmtToForwardMsat:
+				// FeeMSat:
+			}
+			route.Hops = append(route.Hops, hopN)
+			
+			repriceRoute(client, ctx, info, route, amt)
 		}
-		route.Hops = append(route.Hops, hopN)
-		
-		repriceRoute(client, ctx, info, route, amt)
 		
 		dumpRoute(client, ctx, info, route)
 
 		checkRoute(client, ctx, info, route)
 
-		if (route.TotalFeesMsat / 1000) <= feeLimitFixed {
-			economicRoutes = append(economicRoutes, route)
+		if !feeDebug {
+			if (route.TotalFeesMsat / 1000) <= feeLimitFixed {
+				economicRoutes = append(economicRoutes, route)
+			}
 		}
 	}
 
@@ -334,10 +361,13 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, args []string)
 			panic(fmt.Sprintf("stream Recv failed:", err))
 		}
 		
-		fmt.Println(sendRsp)
 
 		if sendRsp.PaymentError == "" {
+			fmt.Println(sendRsp)
 			os.Exit(0)
+		} else {
+			fmt.Printf("PaymentError: %v\n", sendRsp.PaymentError)
+			fmt.Println()
 		}
 		
 		// time.Sleep(1 * time.Second)
