@@ -18,16 +18,6 @@ func abbrevPubKey(pubkey string) string {
 	return pubkey
 }
 
-func nodeAlias(client lnrpc.LightningClient, ctx context.Context, pubkey string) string {
-	rsp, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
-		PubKey: pubkey,
-	})
-	if err != nil {
-		panic(fmt.Sprint("GetChanInfo failed:", err))
-	}
-	return rsp.Node.Alias
-}
-
 func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
     if err != nil {
@@ -53,25 +43,26 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		return rsp.Channels[ii].ChanId < rsp.Channels[jj].ChanId
 	})
 	for _, chn := range rsp.Channels {
-		rsp1, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+		nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
 			PubKey: chn.RemotePubkey,
 		})
 		if err != nil {
 			panic(fmt.Sprint("GetNodeInfo failed:", err))
 		}
-		rmtCap := rsp1.TotalCapacity
+		rmtCap := nodeInfo.TotalCapacity
+		alias := nodeInfo.Node.Alias
 		
-		rsp2, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
+		chanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
 			ChanId: chn.ChanId,
 		})
 		if err != nil {
 			panic(fmt.Sprint("GetChanInfo failed:", err))
 		}
 		var policy *lnrpc.RoutingPolicy
-		if rsp2.Node1Pub == chn.RemotePubkey {
-			policy = rsp2.Node2Policy
+		if chanInfo.Node1Pub == chn.RemotePubkey {
+			policy = chanInfo.Node2Policy
 		} else {
-			policy = rsp2.Node1Policy
+			policy = chanInfo.Node1Policy
 		}
 		var disabled string
 		if policy.Disabled {
@@ -94,10 +85,9 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 			active = "I"
 		}
 
-		alias := nodeAlias(client, ctx, chn.RemotePubkey)
-		logRmtCap := math.Log10(float64(rmtCap))
 		imbalance := chn.LocalBalance -
 			((chn.LocalBalance + chn.RemoteBalance) / 2)
+		
 		str := fmt.Sprintf("%d %s%s%s %9d %9d %9d %10d %s %3.1f %s",
 			chn.ChanId,
 			initiator,
@@ -108,7 +98,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 			chn.RemoteBalance,
 			imbalance,
 			abbrevPubKey(chn.RemotePubkey),
-			logRmtCap,
+			math.Log10(float64(rmtCap)),
 			alias,
 		)
 
@@ -125,18 +115,27 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 		sumRemote += chn.RemoteBalance
 	}
 
-	rsp2, err := client.PendingChannels(ctx, &lnrpc.PendingChannelsRequest{})
+	pendingChannels, err := client.PendingChannels(ctx, &lnrpc.PendingChannelsRequest{})
     if err != nil {
 		panic(fmt.Sprint("PendingChannels failed:", err))
     }
-	for _, chn2 := range rsp2.PendingOpenChannels {
+	for _, chn2 := range pendingChannels.PendingOpenChannels {
 		disabled := "o"
 		initiator := "o"
 		active := "o"
 
-		alias := nodeAlias(client, ctx, chn2.Channel.RemoteNodePub)
+		nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+			PubKey: chn2.Channel.RemoteNodePub,
+		})
+		if err != nil {
+			panic(fmt.Sprint("GetNodeInfo failed:", err))
+		}
+		rmtCap := nodeInfo.TotalCapacity
+		alias := nodeInfo.Node.Alias
+		
 		imbalance := chn2.Channel.LocalBalance -
 			((chn2.Channel.LocalBalance + chn2.Channel.RemoteBalance) / 2)
+		
 		fmt.Printf("                   %s%s%s %9d %9d %9d %10d %s %3.1f %s\n",
 			initiator,
 			active,
@@ -146,7 +145,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 			chn2.Channel.RemoteBalance,
 			imbalance,
 			abbrevPubKey(chn2.Channel.RemoteNodePub),
-			math.Log10(float64(chn2.Channel.Capacity)),
+			math.Log10(float64(rmtCap)),
 			alias,
 		)
 		sumCapacity += chn2.Channel.Capacity
@@ -157,7 +156,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context) {
 	imbalance := sumLocal - ((sumLocal + sumRemote) / 2)
 	
 	color.Bold.Printf("%2d                     %9d %9d %9d %10d %s %3.1f %s\n",
-		len(rsp.Channels) + len(rsp2.PendingOpenChannels),
+		len(rsp.Channels) + len(pendingChannels.PendingOpenChannels),
 		sumCapacity,
 		sumLocal,
 		sumRemote,
