@@ -10,5 +10,8 @@
 *.out
 *.so
 *.test
+/SAMPLE.log
+/channel-lists
 /lndtool
+/lndtool.db
 /main

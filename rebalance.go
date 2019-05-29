@@ -5,7 +5,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	// "encoding/hex"
+	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
@@ -183,21 +183,25 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context,
 	}
 }
 
-func rebalance(client lnrpc.LightningClient, ctx context.Context,
+func rebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 	args []string) {
 	amti, err := strconv.Atoi(args[0])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse amount:", err))
 	}
 	amt := int64(amti)
-	srcChanId, err := strconv.Atoi(args[1])
+	
+	srcChanIdI, err := strconv.Atoi(args[1])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse srcChanId:", err))
 	}
-	dstChanId, err := strconv.Atoi(args[2])
+	srcChanId := uint64(srcChanIdI)
+	
+	dstChanIdI, err := strconv.Atoi(args[2])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse dstChanId:", err))
 	}
+	dstChanId := uint64(dstChanIdI)
 
 	feeLimit := 0.0001   // one basis point default
 	if len(args) > 3 {
@@ -216,7 +220,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context,
 
 	// What is the src pub key?
 	srcChanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
-		ChanId: uint64(srcChanId),
+		ChanId: srcChanId,
 	})
     if err != nil {
 		panic(fmt.Sprintf("src GetChanInfo failed:", err))
@@ -230,7 +234,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context,
 	
 	// What is the dst pub key?
 	dstChanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
-		ChanId: uint64(dstChanId),
+		ChanId: dstChanId,
 	})
     if err != nil {
 		panic(fmt.Sprintf("dst GetChanInfo failed:", err))
@@ -245,7 +249,6 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context,
 	feeLimitPercent := feeLimit * 100
 	feeLimitFixed := int64(float64(amt) * (feeLimitPercent / 100))
 	fmt.Printf("limit fee rate to %f, %d sat\n", feeLimit, feeLimitFixed)
-	fmt.Println()
 
 	fmt.Println("querying possible routes")
 	rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
@@ -260,7 +263,15 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context,
 		FinalCltvDelta: int32(finalCLTVDelta),
 	})
     if err != nil {
-		panic(fmt.Sprintf("QueryRoutes failed:", err))
+		fmt.Println("no routes found at this fee limit")
+		insertLoopAttempt(db, NewLoopAttempt(
+			time.Now().Unix(),
+			srcChanId, srcPubKey,
+			dstChanId, dstPubKey,
+			amt, feeLimit,
+			LoopAttemptNoRoutes,
+		))
+		os.Exit(1)
     }
 
 	economicRoutes := []*lnrpc.Route{}
@@ -269,7 +280,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context,
 		if !feeDebug {
 			// Prepend the initial hop from us through the src channel
 			hop0 := &lnrpc.Hop{
-				ChanId: uint64(srcChanId),
+				ChanId: srcChanId,
 				ChanCapacity: srcChanInfo.Capacity,
 				AmtToForward: amt,
 				PubKey: srcPubKey,
@@ -283,7 +294,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context,
 
 			// Append the final hop back to us through the dst channel
 			hopN := &lnrpc.Hop{
-				ChanId: uint64(dstChanId),
+				ChanId: dstChanId,
 				ChanCapacity: dstChanInfo.Capacity,
 				AmtToForward: amt,
 				PubKey: ourPubKey,
@@ -310,7 +321,14 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context,
 	}
 
 	if len(economicRoutes) == 0 {
-		fmt.Println("no routes inside fee limit")
+		fmt.Println("no routes inside this fee limit")
+		insertLoopAttempt(db, NewLoopAttempt(
+			time.Now().Unix(),
+			srcChanId, srcPubKey,
+			dstChanId, dstPubKey,
+			amt, feeLimit,
+			LoopAttemptNoRoutes,
+		))
 		os.Exit(1)
 	} else {
 		fmt.Printf("found %d economic routes\n", len(economicRoutes))
@@ -364,6 +382,13 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context,
 
 		if sendRsp.PaymentError == "" {
 			fmt.Println(sendRsp)
+			insertLoopAttempt(db, NewLoopAttempt(
+				time.Now().Unix(),
+				srcChanId, srcPubKey,
+				dstChanId, dstPubKey,
+				amt, feeLimit,
+				LoopAttemptSuccess,
+			))
 			os.Exit(0)
 		} else {
 			fmt.Printf("PaymentError: %v\n", sendRsp.PaymentError)
@@ -374,5 +399,12 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context,
 	}
 
 	fmt.Println("failed to route payment")
+	insertLoopAttempt(db, NewLoopAttempt(
+		time.Now().Unix(),
+		srcChanId, srcPubKey,
+		dstChanId, dstPubKey,
+		amt, feeLimit,
+		LoopAttemptFailure,
+	))
 	os.Exit(1)
 }
