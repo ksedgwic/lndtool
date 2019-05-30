@@ -210,6 +210,12 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 			panic(fmt.Sprintf("failed to parse feeLimit:", err))
 		}
 	}
+
+	doRebalance(client, ctx, db, amt, srcChanId, dstChanId, feeLimit)
+}
+
+func doRebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
+	amt int64, srcChanId, dstChanId uint64, feeLimit float64) {
 	
 	// What is our own PubKey?
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
@@ -343,7 +349,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 		panic(fmt.Sprintf("unable to generate preimage:", err))
 	}
 	invoice := &lnrpc.Invoice{
-		Memo: fmt.Sprintf("rebalance %d %s %s", args[0], args[1], args[2]),
+		Memo: fmt.Sprintf("rebalance %d %d %d", amt, srcChanId, dstChanId),
 		RPreimage: preimage,
 		Value:     amt,
 	}

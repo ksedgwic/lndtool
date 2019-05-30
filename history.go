@@ -149,7 +149,10 @@ func insertLoopAttempt(db *sql.DB, attempt *LoopAttempt) {
 
 func recentlyFailed(db *sql.DB,
 	srcChan, dstChan uint64, tstamp int64, amount int64, feeLimitRate float64) bool {
-
+	// Has this loop already failed recently?
+	// Don't consider history prior to the horizon.
+	// Don't consider higher amounts than this one.
+	// Don't consider lessor feeLimitRates than this one.
 	query := `
         SELECT COUNT(*) FROM loop_attempt
         WHERE src_chan = ?

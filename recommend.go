@@ -108,11 +108,6 @@ func recommend(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 	})
 
 	for _, loop := range loops {
-		// Has this loop already failed recently?
-		// Don't include history prior to the horizon.
-		// Don't include higher amounts than this one.
-		// Don't include lessor feeLimitRates than this one.
-
 		// Limit the rebalance amount
 		amount := loop.Amount
 		if amount > amountLimit {
@@ -124,6 +119,8 @@ func recommend(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 		if !recentlyFailed(db, loop.SrcChan, loop.DstChan, tstamp, amount, feeLimitRate) {
 
 			fmt.Printf("./lndtool rebalance %d %d %d %f\n",
+				amount, loop.SrcChan, loop.DstChan, feeLimitRate)
+			doRebalance(client, ctx, db,
 				amount, loop.SrcChan, loop.DstChan, feeLimitRate)
 			os.Exit(0)
 		}
