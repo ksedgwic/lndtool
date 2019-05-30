@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 	
@@ -215,7 +214,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 }
 
 func doRebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
-	amt int64, srcChanId, dstChanId uint64, feeLimit float64) {
+	amt int64, srcChanId, dstChanId uint64, feeLimit float64) bool {
 	
 	// What is our own PubKey?
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
@@ -277,7 +276,7 @@ func doRebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 			amt, feeLimit,
 			LoopAttemptNoRoutes,
 		))
-		os.Exit(1)
+		return false
     }
 
 	economicRoutes := []*lnrpc.Route{}
@@ -335,7 +334,7 @@ func doRebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 			amt, feeLimit,
 			LoopAttemptNoRoutes,
 		))
-		os.Exit(1)
+		return false
 	} else {
 		fmt.Printf("found %d economic routes\n", len(economicRoutes))
 	}
@@ -396,7 +395,7 @@ func doRebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 				amt, feeLimit,
 				LoopAttemptSuccess,
 			))
-			os.Exit(0)
+			return true
 		} else {
 			fmt.Printf("PaymentError: %v\n", sendRsp.PaymentError)
 			fmt.Println()
@@ -413,5 +412,5 @@ func doRebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 		amt, feeLimit,
 		LoopAttemptFailure,
 	))
-	os.Exit(1)
+	return false
 }

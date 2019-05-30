@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"sort"
 	"time"
 	
@@ -43,7 +42,7 @@ var amountLimit = int64(10000)
 var recentSecs = int64(2 * 60 * 60)
 
 func recommend(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
-	args []string) {
+	args []string) bool {
 
 	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
 		ActiveOnly: true,
@@ -122,10 +121,10 @@ func recommend(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 				amount, loop.SrcChan, loop.DstChan, feeLimitRate)
 			doRebalance(client, ctx, db,
 				amount, loop.SrcChan, loop.DstChan, feeLimitRate)
-			os.Exit(0)
+			return true
 		}
 	}
 
 	fmt.Println("no loops recommended")
-	os.Exit(1)
+	return false
 }
