@@ -69,7 +69,7 @@ func main() {
 	
 	cmd := flag.Args()[0]
 	switch cmd {
-	case "channels": { listChannels(client, ctx) }
+	case "channels": { listChannels(client, ctx, db) }
 	case "farside": { farSide(client, ctx) }
 	case "rebalance": { rebalance(client, ctx, db, flag.Args()[1:]) }
 	case "recommend": { recommend(client, ctx, db, flag.Args()[1:]) }

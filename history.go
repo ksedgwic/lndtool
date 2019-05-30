@@ -174,3 +174,66 @@ func recentlyFailed(db *sql.DB,
 	}
 	return count > 0
 }
+
+type ChannelStats struct {
+	RcvCnt int64
+	RcvErr int64
+	RcvSat int64
+	SndCnt int64
+	SndErr int64
+	SndSat int64
+}
+
+func chanStats(db *sql.DB, theChan uint64) *ChannelStats {
+	stats := ChannelStats{}
+	doChanStats(db, theChan, true, &stats)
+	doChanStats(db, theChan, false, &stats)
+	return &stats
+}
+
+func doChanStats(db *sql.DB, theChan uint64, isRcv bool, retval *ChannelStats) {
+
+	query := `SELECT amount, outcome FROM loop_attempt `
+	
+	if isRcv {
+		query += ` WHERE dst_chan = ?`
+	} else {
+		query += ` WHERE src_chan = ?`
+	}
+
+	rows, err := db.Query(query, theChan)
+	if err != nil {
+		panic(fmt.Sprintf("db.Query \"%s\" failed: %v", query, err))
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var amount int
+		var outcome int
+		err = rows.Scan(&amount, &outcome)
+		if err != nil {
+			panic(err)
+		}
+		
+		if isRcv {
+			retval.RcvCnt += 1
+			if outcome != 0 {
+				retval.RcvErr += 1
+			} else {
+				retval.RcvSat += int64(amount)
+			}
+		} else {
+			retval.SndCnt += 1
+			if outcome != 0 {
+				retval.SndErr += 1
+			} else {
+				retval.SndSat += int64(amount)
+			}
+		}
+	}
+	// get any error encountered during iteration
+	err = rows.Err()
+	if err != nil {
+		panic(err)
+	}
+}
