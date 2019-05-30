@@ -147,3 +147,27 @@ func insertLoopAttempt(db *sql.DB, attempt *LoopAttempt) {
 //     }
 // }
 
+func recentlyFailed(db *sql.DB,
+	srcChan, dstChan uint64, tstamp int64, amount int64, feeLimitRate float64) bool {
+
+	query := `
+        SELECT COUNT(*) FROM loop_attempt
+        WHERE src_chan = ?
+          AND dst_chan = ?
+          AND tstamp > ?
+          AND amount <= ?
+          AND fee_limit_rate >= ?
+          AND outcome != 0
+    `
+	row := db.QueryRow(query, srcChan, dstChan, tstamp, amount, feeLimitRate);
+	var count int
+	switch err := row.Scan(&count); err {
+	case sql.ErrNoRows:
+		panic("no rows?")
+	case nil:
+		//
+	default:
+		panic(err)
+	}
+	return count > 0
+}

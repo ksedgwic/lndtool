@@ -347,9 +347,7 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 		RPreimage: preimage,
 		Value:     amt,
 	}
-	ctxt, _ := context.WithTimeout(
-		context.Background(), time.Second * 300,
-	)
+	ctxt, _ := context.WithTimeout(context.Background(), time.Second * 60,)
 	invoiceRsp, err := client.AddInvoice(ctxt, invoice)
 	if err != nil {
 		panic(fmt.Sprintf("unable to add invoice:", err))
@@ -367,16 +365,19 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 
 		stream, err := client.SendToRoute(ctxt)
 		if err != nil {
-			panic(fmt.Sprintf("SendToRoute failed:", err))
+			fmt.Printf("client.SendToRoute failed:", err)
+			continue
 		}
 
 		if err := stream.Send(req); err != nil {
-			panic(fmt.Sprintf("stream Send failed:", err))
+			fmt.Printf("stream.Send failed:", err)
+			continue
 		}
 
 		sendRsp, err := stream.Recv()
 		if err != nil {
-			panic(fmt.Sprintf("stream Recv failed:", err))
+			fmt.Printf("stream.Recv failed:", err)
+			continue
 		}
 		
 

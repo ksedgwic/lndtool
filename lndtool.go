@@ -72,6 +72,7 @@ func main() {
 	case "channels": { listChannels(client, ctx) }
 	case "farside": { farSide(client, ctx) }
 	case "rebalance": { rebalance(client, ctx, db, flag.Args()[1:]) }
+	case "recommend": { recommend(client, ctx, db, flag.Args()[1:]) }
 	case "mkdb": { createDatabase(db) }
 	default: {
         fmt.Printf("command \"%s\" unknown\n", cmd)
