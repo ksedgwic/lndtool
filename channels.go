@@ -145,7 +145,7 @@ func listChannels(client lnrpc.LightningClient, ctx context.Context, db *sql.DB)
 		rmtCap := nodeInfo.TotalCapacity
 		alias := nodeInfo.Node.Alias
 
-		chnStatsStr := "            "
+		chnStatsStr := "           "
 		
 		imbalance := chn2.Channel.LocalBalance -
 			((chn2.Channel.LocalBalance + chn2.Channel.RemoteBalance) / 2)
