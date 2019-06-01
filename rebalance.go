@@ -253,6 +253,11 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 	// Defer creating invoice until we get far enough to need one.
 	var invoiceRsp *lnrpc.AddInvoiceResponse = nil
 
+	ourNode, err := hex.DecodeString(ourPubKey)
+    if err != nil {
+		panic(fmt.Sprintf("hex.DecodeString failed:", err))
+    }
+	
 	for {
 	RetryQuery:
 		fmt.Printf("querying possible routes, ignoring %d edges\n",
@@ -268,6 +273,7 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 			SourcePubKey: srcPubKey,
 			FinalCltvDelta: int32(finalCLTVDelta),
 			IgnoredEdges: badEdges,
+			IgnoredNodes: [][]byte{ ourNode },
 		})
 
 		if err != nil {
@@ -284,6 +290,9 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 
 		// Only get one route, only consider the first slot.
 		route := rsp.Routes[0]
+
+		// fmt.Println("BEFORE")
+		// dumpRoute(client, ctx, info, route)
 
 		// Prepend the initial hop from us through the src channel
 		hop0 := &lnrpc.Hop{
