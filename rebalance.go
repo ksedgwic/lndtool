@@ -6,17 +6,14 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"time"
 	
     "github.com/lightningnetwork/lnd/lnrpc"
+    "github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 )
-
-// When true, don't add the first and last hops to the routes and quit
-// after displaying the lnd priced route.
-//
-var feeDebug = false
 
 func hopPolicy(client lnrpc.LightningClient, ctx context.Context,
 	chanId uint64, dstNode string) (*lnrpc.RoutingPolicy, *lnrpc.RoutingPolicy) {
@@ -182,8 +179,7 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context,
 	}
 }
 
-func rebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
-	args []string) {
+func rebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, args []string) {
 	amti, err := strconv.Atoi(args[0])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse amount:", err))
@@ -210,11 +206,10 @@ func rebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 		}
 	}
 
-	doRebalance(client, ctx, db, amt, srcChanId, dstChanId, feeLimit)
+	doRebalance(client, router, ctx, db, amt, srcChanId, dstChanId, feeLimit)
 }
 
-func doRebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
-	amt int64, srcChanId, dstChanId uint64, feeLimit float64) bool {
+func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, amt int64, srcChanId, dstChanId uint64, feeLimit float64) bool {
 	
 	// What is our own PubKey?
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
@@ -255,139 +250,167 @@ func doRebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 	feeLimitFixed := int64(float64(amt) * (feeLimitPercent / 100))
 	fmt.Printf("limit fee rate to %f, %d sat\n", feeLimit, feeLimitFixed)
 
-	fmt.Println("querying possible routes")
-	rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
-		PubKey: dstPubKey,
-		Amt: amt,
-		FeeLimit: &lnrpc.FeeLimit{
-			Limit: &lnrpc.FeeLimit_Fixed{
-				Fixed: feeLimitFixed,
+	// Defer creating invoice until we get far enough to need one.
+	var invoiceRsp *lnrpc.AddInvoiceResponse = nil
+
+	for {
+	RetryQuery:
+		fmt.Printf("querying possible routes, ignoring %d edges\n",
+			len(badEdges))
+		rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
+			PubKey: dstPubKey,
+			Amt: amt,
+			FeeLimit: &lnrpc.FeeLimit{
+				Limit: &lnrpc.FeeLimit_Fixed{
+					Fixed: feeLimitFixed,
+				},
 			},
-		},
-		SourcePubKey: srcPubKey,
-		FinalCltvDelta: int32(finalCLTVDelta),
-	})
-    if err != nil {
-		fmt.Println("no routes found at this fee limit")
-		insertLoopAttempt(db, NewLoopAttempt(
-			time.Now().Unix(),
-			srcChanId, srcPubKey,
-			dstChanId, dstPubKey,
-			amt, feeLimit,
-			LoopAttemptNoRoutes,
-		))
-		return false
-    }
+			SourcePubKey: srcPubKey,
+			FinalCltvDelta: int32(finalCLTVDelta),
+			IgnoredEdges: badEdges,
+		})
 
-	economicRoutes := []*lnrpc.Route{}
-	for _, route := range rsp.Routes {
-
-		if !feeDebug {
-			// Prepend the initial hop from us through the src channel
-			hop0 := &lnrpc.Hop{
-				ChanId: srcChanId,
-				ChanCapacity: srcChanInfo.Capacity,
-				AmtToForward: amt,
-				PubKey: srcPubKey,
-				// We will set all of these when we "reprice" the route.
-				// Fee:
-				// Expiry:
-				// AmtToForwardMsat:
-				// FeeMSat:
-			}
-			route.Hops = append([]*lnrpc.Hop{ hop0 }, route.Hops...)
-
-			// Append the final hop back to us through the dst channel
-			hopN := &lnrpc.Hop{
-				ChanId: dstChanId,
-				ChanCapacity: dstChanInfo.Capacity,
-				AmtToForward: amt,
-				PubKey: ourPubKey,
-				// We will set all of these when we "reprice" the route.
-				// Fee:
-				// Expiry:
-				// AmtToForwardMsat:
-				// FeeMSat:
-			}
-			route.Hops = append(route.Hops, hopN)
-			
-			repriceRoute(client, ctx, info, route, amt)
+		if err != nil {
+			fmt.Println("no routes found at this fee limit")
+			insertLoopAttempt(db, NewLoopAttempt(
+				time.Now().Unix(),
+				srcChanId, srcPubKey,
+				dstChanId, dstPubKey,
+				amt, feeLimit,
+				LoopAttemptNoRoutes,
+			))
+			return false
 		}
+
+		// Only get one route, only consider the first slot.
+		route := rsp.Routes[0]
+
+		// Prepend the initial hop from us through the src channel
+		hop0 := &lnrpc.Hop{
+			ChanId: srcChanId,
+			ChanCapacity: srcChanInfo.Capacity,
+			AmtToForward: amt,
+			PubKey: srcPubKey,
+			// We will set all of these when we "reprice" the route.
+			// Fee:
+			// Expiry:
+			// AmtToForwardMsat:
+			// FeeMSat:
+		}
+		route.Hops = append([]*lnrpc.Hop{ hop0 }, route.Hops...)
+
+		// Append the final hop back to us through the dst channel
+		hopN := &lnrpc.Hop{
+			ChanId: dstChanId,
+			ChanCapacity: dstChanInfo.Capacity,
+			AmtToForward: amt,
+			PubKey: ourPubKey,
+			// We will set all of these when we "reprice" the route.
+			// Fee:
+			// Expiry:
+			// AmtToForwardMsat:
+			// FeeMSat:
+		}
+		route.Hops = append(route.Hops, hopN)
 		
+		repriceRoute(client, ctx, info, route, amt)
+			
 		dumpRoute(client, ctx, info, route)
 
 		checkRoute(client, ctx, info, route)
+		
+		if (route.TotalFeesMsat / 1000) > feeLimitFixed {
+			fmt.Println("route exceeds fee limit")
+			insertLoopAttempt(db, NewLoopAttempt(
+				time.Now().Unix(),
+				srcChanId, srcPubKey,
+				dstChanId, dstPubKey,
+				amt, feeLimit,
+				LoopAttemptNoRoutes,
+			))
+			return false
+		}
 
-		if !feeDebug {
-			if (route.TotalFeesMsat / 1000) <= feeLimitFixed {
-				economicRoutes = append(economicRoutes, route)
+		ctxt, _ :=
+			context.WithTimeout(context.Background(), time.Second * 60,)
+		
+		if invoiceRsp == nil {
+			fmt.Println("generating invoice")
+			
+			// Generate an invoice.
+			preimage := make([]byte, 32)
+			_, err = rand.Read(preimage)
+			if err != nil {
+				panic(fmt.Sprintf("unable to generate preimage:", err))
+			}
+			invoice := &lnrpc.Invoice{
+				Memo: fmt.Sprintf("rebalance %d %d %d",
+					amt, srcChanId, dstChanId),
+				RPreimage: preimage,
+				Value:     amt,
+			}
+			invoiceRsp, err = client.AddInvoice(ctxt, invoice)
+			if err != nil {
+				panic(fmt.Sprintf("unable to add invoice:", err))
 			}
 		}
-	}
 
-	if len(economicRoutes) == 0 {
-		fmt.Println("no routes inside this fee limit")
-		insertLoopAttempt(db, NewLoopAttempt(
-			time.Now().Unix(),
-			srcChanId, srcPubKey,
-			dstChanId, dstPubKey,
-			amt, feeLimit,
-			LoopAttemptNoRoutes,
-		))
-		return false
-	} else {
-		fmt.Printf("found %d economic routes\n", len(economicRoutes))
-	}
-	
-	fmt.Println("generating invoice")
-	
-	// Generate an invoice.
-	preimage := make([]byte, 32)
-	_, err = rand.Read(preimage)
-	if err != nil {
-		panic(fmt.Sprintf("unable to generate preimage:", err))
-	}
-	invoice := &lnrpc.Invoice{
-		Memo: fmt.Sprintf("rebalance %d %d %d", amt, srcChanId, dstChanId),
-		RPreimage: preimage,
-		Value:     amt,
-	}
-	ctxt, _ := context.WithTimeout(context.Background(), time.Second * 60,)
-	invoiceRsp, err := client.AddInvoice(ctxt, invoice)
-	if err != nil {
-		panic(fmt.Sprintf("unable to add invoice:", err))
-	}
+		fmt.Println("sending to route")
 
-	for _, route := range(economicRoutes) {
-
-		fmt.Println("TRYING:")
-		dumpRoute(client, ctx, info, route)
-
-		req := &lnrpc.SendToRouteRequest{
+		sendRsp, err := router.SendToRoute(ctxt, &routerrpc.SendToRouteRequest{
 			PaymentHash: invoiceRsp.RHash,
 			Route: route,
-		}
-
-		stream, err := client.SendToRoute(ctxt)
+		})
 		if err != nil {
-			fmt.Printf("client.SendToRoute failed:", err)
-			continue
+			panic(fmt.Sprintf("router.SendToRoute failed:", err))
 		}
 
-		if err := stream.Send(req); err != nil {
-			fmt.Printf("stream.Send failed:", err)
-			continue
-		}
+		if sendRsp.Failure != nil {
+			pubKey :=
+				hex.EncodeToString(sendRsp.Failure.GetFailureSourcePubkey())
 
-		sendRsp, err := stream.Recv()
-		if err != nil {
-			fmt.Printf("stream.Recv failed:", err)
-			continue
-		}
-		
+			nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+				PubKey: pubKey,
+			})
+			if err != nil {
+				panic(fmt.Sprintf("GetNodeInfo failed[1]:", err))
+			}
+			alias := nodeInfo.Node.Alias
+			
+			fmt.Printf("%30s: %s\n", alias, sendRsp.Failure.Code.String())
+			fmt.Println()
+			
+			// Figure out which edge to ignore
+			for ndx, hop := range route.Hops {
+				if hop.PubKey == pubKey {
+					// We want to drop the next hop.
+					if ndx == len(route.Hops) - 1 {
+						// Can't skip the last hop ... this one's done.
+						fmt.Println("can't ignore last hop")
+						goto FailedToRoute
+					}
+					chanId := route.Hops[ndx+1].ChanId
+					nextChanInfo, err :=
+						client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
+						ChanId: chanId,
+					})
+					if err != nil {
+						panic(fmt.Sprintf("hop GetChanInfo failed:", err))
+					}
+					reverse := nextChanInfo.Node2Pub == pubKey
 
-		if sendRsp.PaymentError == "" {
-			fmt.Println(sendRsp)
+					// Append this edge to the ignoredEdges and re-route.
+					badEdges = append(badEdges, &lnrpc.EdgeLocator{
+						ChannelId: chanId,
+						DirectionReverse: reverse,
+
+					})
+					goto RetryQuery
+				}
+			}
+			panic(fmt.Sprintf("couldn't find matching hop"))
+		} else {
+			fmt.Printf("PREIMAGE: %s\n", hex.EncodeToString(sendRsp.Preimage))
 			insertLoopAttempt(db, NewLoopAttempt(
 				time.Now().Unix(),
 				srcChanId, srcPubKey,
@@ -396,14 +419,10 @@ func doRebalance(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 				LoopAttemptSuccess,
 			))
 			return true
-		} else {
-			fmt.Printf("PaymentError: %v\n", sendRsp.PaymentError)
-			fmt.Println()
 		}
-		
-		// time.Sleep(1 * time.Second)
 	}
 
+FailedToRoute:
 	fmt.Println("failed to route payment")
 	insertLoopAttempt(db, NewLoopAttempt(
 		time.Now().Unix(),

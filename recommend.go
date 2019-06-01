@@ -10,6 +10,7 @@ import (
 	"time"
 	
     "github.com/lightningnetwork/lnd/lnrpc"
+    "github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 )
 
 type PotentialLoop struct {
@@ -41,8 +42,7 @@ var feeLimitRate = float64(0.0005)
 var amountLimit = int64(10000)
 var recentSecs = int64(2 * 60 * 60)
 
-func recommend(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
-	args []string) bool {
+func recommend(client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, args []string) bool {
 
 	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
 		ActiveOnly: true,
@@ -119,8 +119,7 @@ func recommend(client lnrpc.LightningClient, ctx context.Context, db *sql.DB,
 
 			fmt.Printf("./lndtool rebalance %d %d %d %f\n",
 				amount, loop.SrcChan, loop.DstChan, feeLimitRate)
-			doRebalance(client, ctx, db,
-				amount, loop.SrcChan, loop.DstChan, feeLimitRate)
+			doRebalance(client, router, ctx, db, amount, loop.SrcChan, loop.DstChan, feeLimitRate)
 			return true
 		}
 	}

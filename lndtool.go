@@ -12,14 +12,20 @@ import (
     "path"
 	
     "github.com/lightningnetwork/lnd/lnrpc"
+    "github.com/lightningnetwork/lnd/lnrpc/routerrpc"
     "github.com/lightningnetwork/lnd/macaroons"
     "google.golang.org/grpc"
     "google.golang.org/grpc/credentials"
     "gopkg.in/macaroon.v2"
 )
 
+// Keep accumulating bad edges.
+var badEdges []*lnrpc.EdgeLocator
+
 func main() {
 
+	badEdges = []*lnrpc.EdgeLocator{}
+	
 	flag.Parse()
 	
     usr, err := user.Current()
@@ -63,19 +69,20 @@ func main() {
         return
     }
     client := lnrpc.NewLightningClient(conn)
+	router := routerrpc.NewRouterClient(conn)
 	ctx := context.Background()
 
 	db := openDatabase()
-	
+
 	cmd := flag.Args()[0]
 	switch cmd {
 	case "channels": { listChannels(client, ctx, db) }
 	case "farside": { farSide(client, ctx) }
-	case "rebalance": { rebalance(client, ctx, db, flag.Args()[1:]) }
-	case "recommend": { recommend(client, ctx, db, flag.Args()[1:]) }
+	case "rebalance": { rebalance(client, router, ctx, db, flag.Args()[1:]) }
+	case "recommend": { recommend(client, router, ctx, db, flag.Args()[1:]) }
 	case "autobalance": {
 		for {
-			if !recommend(client, ctx, db, flag.Args()[1:]) {
+			if !recommend(client, router, ctx, db, flag.Args()[1:]) {
 				break
 			}
 		}
