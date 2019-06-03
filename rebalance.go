@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 	
@@ -16,58 +17,44 @@ import (
 )
 
 func hopPolicy(client lnrpc.LightningClient, ctx context.Context,
-	chanId uint64, dstNode string) (*lnrpc.RoutingPolicy, *lnrpc.RoutingPolicy) {
+	chanId uint64, dstNode string) *lnrpc.RoutingPolicy {
 	chanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{ChanId: chanId})
 	if err != nil {
 		panic(fmt.Sprintf("last GetChanInfo failed:", err))
 	}
 	if chanInfo.Node1Pub == dstNode {
-		return chanInfo.Node2Policy, chanInfo.Node1Policy
+		return chanInfo.Node2Policy
 	} else {
-		return chanInfo.Node1Policy, chanInfo.Node2Policy
+		return chanInfo.Node1Policy
 	}
 }
 
-func hopStr(info *lnrpc.GetInfoResponse, hop *lnrpc.Hop) string {
-	return fmt.Sprintf("%d %10d %7d %10d %4d %7d %4d %s",
-		hop.ChanId,
-		hop.ChanCapacity,
-		hop.AmtToForward,
-		hop.AmtToForwardMsat,
-		hop.Fee,
-		hop.FeeMsat,
-		hop.Expiry - info.BlockHeight,
-		hop.PubKey,
-	)
-}
-
-func policyStr(info *lnrpc.GetInfoResponse,
-	sndPolicy *lnrpc.RoutingPolicy, rcvPolicy *lnrpc.RoutingPolicy) string {
-	return fmt.Sprintf("%7d %4d %4d",
-		sndPolicy.FeeBaseMsat,
-		sndPolicy.FeeRateMilliMsat,
-		sndPolicy.TimeLockDelta,
-		// rcvPolicy.FeeBaseMsat,
-		// rcvPolicy.FeeRateMilliMsat,
-		// rcvPolicy.TimeLockDelta,
-	)
-}
-
-func routeStr(info *lnrpc.GetInfoResponse, route *lnrpc.Route) string {
-	return fmt.Sprintf("%29s %7d %10d %4d %7d %4d",
-		"",
-		route.TotalAmt,
-		route.TotalAmtMsat,
-		route.TotalFees,
-		route.TotalFeesMsat,
-		route.TotalTimeLock - info.BlockHeight,
-	)
-}
+var finalCLTVDelta = uint32(144)
 
 func dumpRoute(client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
-	for ndx, hop := range route.Hops {
 
+	fmt.Println("ChanId               Capacity     Amt    AmtMsat  Fee  FeeMsat Dlt PubKey                                                              FeeBase   FR  Dlt Alias")
+	
+	fmt.Printf("%29s %7d %10d %12s %4d %s %18s %s\n",
+		"", 
+		route.TotalAmt,
+		route.TotalAmtMsat,
+		"",
+		route.TotalTimeLock - info.BlockHeight,
+		info.IdentityPubkey,
+		"",
+		info.Alias,
+	)
+
+	// Make an array of the policies, one for each hop.
+	policies := []*lnrpc.RoutingPolicy{}
+	for _, hop := range route.Hops {
+		policies = append(policies,
+			hopPolicy(client, ctx, hop.ChanId, hop.PubKey))
+	}
+	
+	for ndx, hop := range route.Hops {
 		nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
 			PubKey: hop.PubKey,
 		})
@@ -76,28 +63,51 @@ func dumpRoute(client lnrpc.LightningClient, ctx context.Context,
 		}
 		alias := nodeInfo.Node.Alias
 
-		sndPolicy, rcvPolicy :=
-			hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
-
-		pstr := "                 "
-		if ndx != 0 {
-			pstr = policyStr(info, sndPolicy, rcvPolicy)
+		// The policy information comes from the next hop.
+		pstr := ""
+		if ndx < len(route.Hops) - 1 {
+			pstr = fmt.Sprintf("%7d %4d %4d",
+				policies[ndx+1].FeeBaseMsat,
+				policies[ndx+1].FeeRateMilliMsat,
+				policies[ndx+1].TimeLockDelta,
+			)
+		} else {
+			pstr = fmt.Sprintf("%7d %4d %4d",
+				0,
+				0,
+				0,
+			)
 		}
 		
-		fmt.Printf("%s %s %s\n", hopStr(info, hop), pstr, alias)
+		fmt.Printf("%d %10d %7d %10d %4d %7d %4d %s %18s %s\n",
+			hop.ChanId,
+			hop.ChanCapacity,
+			hop.AmtToForward,
+			hop.AmtToForwardMsat,
+			hop.Fee,
+			hop.FeeMsat,
+			hop.Expiry - info.BlockHeight,
+			hop.PubKey,
+			pstr,
+			alias,
+		)
 	}
-	fmt.Printf("%s\n", routeStr(info, route))
+
+	// Print fee totals.
+	fmt.Printf("%48s %4d %7d\n",
+		"",
+		route.TotalFees,
+		route.TotalFeesMsat,
+	)
 	fmt.Println()
 }
-
-var finalCLTVDelta = uint32(144)
 
 func repriceRoute(
 	client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
 	ll := len(route.Hops)
 	
-	sumDelta := uint32(finalCLTVDelta)
+	sumDelta := finalCLTVDelta
 	lastDelta := uint32(0)
 	
 	sumFeeMsat := int64(0)
@@ -107,7 +117,7 @@ func repriceRoute(
 	
 	for ndx := ll - 1; ndx >= 0; ndx-- {
 		hop := route.Hops[ndx]
-		sndPolicy, _ := hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
+		sndPolicy := hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
 
 		hop.Expiry = info.BlockHeight + sumDelta
 		
@@ -141,7 +151,7 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	ll := len(route.Hops)
 	
-	sumDelta := uint32(finalCLTVDelta)
+	sumDelta := finalCLTVDelta
 	lastDelta := uint32(0)
 	
 	sumFeeMsat := int64(0)
@@ -149,7 +159,7 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context,
 	
 	for ndx := ll - 1; ndx >= 0; ndx-- {
 		hop := route.Hops[ndx]
-		sndPolicy, _ := hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
+		sndPolicy := hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
 
 		if hop.Expiry - info.BlockHeight != sumDelta {
 			panic(fmt.Sprintf("bad expiry on hop %d", ndx))
@@ -291,9 +301,6 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 		// Only get one route, only consider the first slot.
 		route := rsp.Routes[0]
 
-		// fmt.Println("BEFORE")
-		// dumpRoute(client, ctx, info, route)
-
 		// Prepend the initial hop from us through the src channel
 		hop0 := &lnrpc.Hop{
 			ChanId: srcChanId,
@@ -327,6 +334,9 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 		dumpRoute(client, ctx, info, route)
 
 		checkRoute(client, ctx, info, route)
+
+		// FIXME - REMOVE THIS
+		os.Exit(0)
 		
 		if (route.TotalFeesMsat / 1000) > feeLimitFixed {
 			fmt.Println("route exceeds fee limit")
