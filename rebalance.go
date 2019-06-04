@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 	
@@ -335,9 +334,6 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 
 		checkRoute(client, ctx, info, route)
 
-		// FIXME - REMOVE THIS
-		os.Exit(0)
-		
 		if (route.TotalFeesMsat / 1000) > feeLimitFixed {
 			fmt.Println("route exceeds fee limit")
 			insertLoopAttempt(db, NewLoopAttempt(
