@@ -33,7 +33,7 @@ var finalCLTVDelta = uint32(144)
 func dumpRoute(client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 
-	fmt.Println("ChanId               Capacity     Amt    AmtMsat  Fee  FeeMsat Dlt PubKey                                                              FeeBase   FR  Dlt Alias")
+	fmt.Println("ChanId               Capacity     Amt    AmtMsat  Fee  FeeMsat Dlt PubKey                                                                   FB   FR  Dlt Alias")
 	
 	fmt.Printf("%29s %7d %10d %12s %4d %s %18s %s\n",
 		"", 
@@ -269,6 +269,14 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 	
 	for {
 	RetryQuery:
+		// Reject all edges that are known to fail at this amount.
+		badEdges := []*lnrpc.EdgeLocator{}
+		for edge, limitAmount := range(edgeLimit) {
+			if amt >= limitAmount {
+				badEdges = append(badEdges, edge)
+			}
+		}
+		
 		fmt.Printf("querying possible routes, ignoring %d edges\n",
 			len(badEdges))
 		rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
@@ -377,7 +385,8 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 			Route: route,
 		})
 		if err != nil {
-			panic(fmt.Sprintf("router.SendToRoute failed:", err))
+			fmt.Printf("router.SendToRoute failed:", err)
+			goto FailedToRoute
 		}
 
 		if sendRsp.Failure != nil {
@@ -398,8 +407,10 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 			// Figure out which edge to ignore
 			for ndx, hop := range route.Hops {
 				if hop.PubKey == pubKey {
-					// We want to drop the next hop.
-					if ndx == len(route.Hops) - 1 {
+					// We want to drop the next hop. Is this the next
+					// to last hop.?
+					fmt.Printf("DEBUG: %d == %d\n", ndx, len(route.Hops) - 2)
+					if ndx == len(route.Hops) - 2 {
 						// Can't skip the last hop ... this one's done.
 						fmt.Println("can't ignore last hop")
 						goto FailedToRoute
@@ -415,11 +426,14 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 					reverse := nextChanInfo.Node2Pub == pubKey
 
 					// Append this edge to the ignoredEdges and re-route.
-					badEdges = append(badEdges, &lnrpc.EdgeLocator{
+					badEdge := &lnrpc.EdgeLocator{
 						ChannelId: chanId,
 						DirectionReverse: reverse,
-
-					})
+					}
+					fmt.Printf("ignoring %v\n", badEdge)
+					if edgeLimit[badEdge] == 0 || amt < edgeLimit[badEdge] {
+						edgeLimit[badEdge] = amt
+					}
 					goto RetryQuery
 				}
 			}

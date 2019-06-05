@@ -20,11 +20,11 @@ import (
 )
 
 // Keep accumulating bad edges.
-var badEdges []*lnrpc.EdgeLocator
+var edgeLimit map[*lnrpc.EdgeLocator]int64
 
 func main() {
 
-	badEdges = []*lnrpc.EdgeLocator{}
+	edgeLimit = map[*lnrpc.EdgeLocator]int64{}
 	
 	flag.Parse()
 	
