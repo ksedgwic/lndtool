@@ -15,6 +15,8 @@ import (
     "github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 )
 
+var ignoreBadEdges = true
+
 func hopPolicy(client lnrpc.LightningClient, ctx context.Context,
 	chanId uint64, dstNode string) *lnrpc.RoutingPolicy {
 	chanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{ChanId: chanId})
@@ -269,11 +271,13 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 	
 	for {
 	RetryQuery:
-		// Reject all edges that are known to fail at this amount.
 		badEdges := []*lnrpc.EdgeLocator{}
-		for edge, limitAmount := range(edgeLimit) {
-			if amt >= limitAmount {
-				badEdges = append(badEdges, edge)
+		if ignoreBadEdges {
+			// Reject all edges that are known to fail at this amount.
+			for edge, limitAmount := range(edgeLimit) {
+				if amt >= limitAmount {
+					badEdges = append(badEdges, edge)
+				}
 			}
 		}
 		
@@ -344,6 +348,7 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 
 		if (route.TotalFeesMsat / 1000) > feeLimitFixed {
 			fmt.Println("route exceeds fee limit")
+			fmt.Println()
 			insertLoopAttempt(db, NewLoopAttempt(
 				time.Now().Unix(),
 				srcChanId, srcPubKey,
@@ -409,7 +414,6 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 				if hop.PubKey == pubKey {
 					// We want to drop the next hop. Is this the next
 					// to last hop.?
-					fmt.Printf("DEBUG: %d == %d\n", ndx, len(route.Hops) - 2)
 					if ndx == len(route.Hops) - 2 {
 						// Can't skip the last hop ... this one's done.
 						fmt.Println("can't ignore last hop")
@@ -425,15 +429,18 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 					}
 					reverse := nextChanInfo.Node2Pub == pubKey
 
-					// Append this edge to the ignoredEdges and re-route.
-					badEdge := &lnrpc.EdgeLocator{
-						ChannelId: chanId,
-						DirectionReverse: reverse,
+					if ignoreBadEdges {
+						// Append this edge to the ignoredEdges and re-route.
+						badEdge := &lnrpc.EdgeLocator{
+							ChannelId: chanId,
+							DirectionReverse: reverse,
+						}
+						fmt.Printf("ignoring %v\n", badEdge)
+						if edgeLimit[badEdge] == 0 || amt < edgeLimit[badEdge] {
+							edgeLimit[badEdge] = amt
+						}
 					}
-					fmt.Printf("ignoring %v\n", badEdge)
-					if edgeLimit[badEdge] == 0 || amt < edgeLimit[badEdge] {
-						edgeLimit[badEdge] = amt
-					}
+					fmt.Println()
 					goto RetryQuery
 				}
 			}
