@@ -3,12 +3,12 @@
 package main
 
 import (
-	// "errors"
 	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
+	"time"
 	
 	"github.com/btcsuite/btcutil"
 	flags "github.com/jessevdk/go-flags"
@@ -22,6 +22,11 @@ const (
 	defaultRPCHost			  = "localhost"
 
 	defaultFinalCLTVDelta     = uint32(144)
+	defaultFeeLimitRate		  = float64(0.0005)
+
+	defaultMinImbalance		  = int64(1000)
+	defaultTransferAmount	  = int64(10000)
+	defaultRetryInhibit		  = time.Hour
 )
 
 var (
@@ -37,6 +42,14 @@ var (
 
 type rebalanceConfig struct {
 	FinalCLTVDelta		uint32	`long:"finalcltvdelta" description:"Final CLTV delta"`
+	FeeLimitRate		float64	`long:"feelimitrate" description:"Limit fees to this rate"`
+}
+
+type recommendConfig struct {
+	PeerNodeBlacklist	[]string	`long:"peernodeblacklist" description:"Adds node to peers to skip"`
+	MinImbalance		int64		`long:"minimbalance" description:"Minimum imbalance to consider rebalancing"`
+	TransferAmount		int64		`long:"transferamount" description:"Size of rebalance transfers"`
+	RetryInhibit		time.Duration	`long:"retryinhibit" description:"Inhibit retrying failed loops for this long"`
 }
 
 type config struct {
@@ -51,6 +64,7 @@ type config struct {
 	RPCServer		string   `long:"rpcserver" description:"host:port of ln daemon"`
 
 	Rebalance		*rebalanceConfig	`group:"Rebalance" namespace:"rebalance"`
+	Recommend		*recommendConfig	`group:"Recommend" namespace:"recommend"`
 }
 
 func loadConfig() (*config, []string, error) {
@@ -63,6 +77,13 @@ func loadConfig() (*config, []string, error) {
 		RPCServer:		defaultRPCServer,
 		Rebalance:		&rebalanceConfig{
 			FinalCLTVDelta:		defaultFinalCLTVDelta,
+			FeeLimitRate:		defaultFeeLimitRate,
+		},
+		Recommend:		&recommendConfig{
+			PeerNodeBlacklist:	[]string{},
+			MinImbalance:		defaultMinImbalance,
+			TransferAmount:		defaultTransferAmount,
+			RetryInhibit:		defaultRetryInhibit,
 		},
 	}
 

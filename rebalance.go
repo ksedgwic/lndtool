@@ -207,18 +207,10 @@ func rebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 	}
 	dstChanId := uint64(dstChanIdI)
 
-	feeLimit := 0.0001   // one basis point default
-	if len(args) > 3 {
-		feeLimit, err = strconv.ParseFloat(args[3], 64)
-		if err != nil {
-			panic(fmt.Sprintf("failed to parse feeLimit:", err))
-		}
-	}
-
-	doRebalance(cfg, client, router, ctx, db, amt, srcChanId, dstChanId, feeLimit)
+	doRebalance(cfg, client, router, ctx, db, amt, srcChanId, dstChanId)
 }
 
-func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, amt int64, srcChanId, dstChanId uint64, feeLimit float64) bool {
+func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, amt int64, srcChanId, dstChanId uint64) bool {
 	
 	// What is our own PubKey?
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
@@ -255,9 +247,9 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 		dstPubKey = dstChanInfo.Node1Pub
 	}
 
-	feeLimitPercent := feeLimit * 100
+	feeLimitPercent := cfg.Rebalance.FeeLimitRate * 100
 	feeLimitFixed := int64(float64(amt) * (feeLimitPercent / 100))
-	fmt.Printf("limit fee rate to %f, %d sat\n", feeLimit, feeLimitFixed)
+	fmt.Printf("limit fee rate to %f, %d sat\n", cfg.Rebalance.FeeLimitRate, feeLimitFixed)
 
 	// Defer creating invoice until we get far enough to need one.
 	var invoiceRsp *lnrpc.AddInvoiceResponse = nil
@@ -301,7 +293,7 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 				time.Now().Unix(),
 				srcChanId, srcPubKey,
 				dstChanId, dstPubKey,
-				amt, feeLimit,
+				amt, cfg.Rebalance.FeeLimitRate,
 				LoopAttemptNoRoutes,
 			))
 			return false
@@ -351,7 +343,7 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 				time.Now().Unix(),
 				srcChanId, srcPubKey,
 				dstChanId, dstPubKey,
-				amt, feeLimit,
+				amt, cfg.Rebalance.FeeLimitRate,
 				LoopAttemptNoRoutes,
 			))
 			return false
@@ -449,7 +441,7 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 				time.Now().Unix(),
 				srcChanId, srcPubKey,
 				dstChanId, dstPubKey,
-				amt, feeLimit,
+				amt, cfg.Rebalance.FeeLimitRate,
 				LoopAttemptSuccess,
 			))
 			return true
@@ -462,7 +454,7 @@ FailedToRoute:
 		time.Now().Unix(),
 		srcChanId, srcPubKey,
 		dstChanId, dstPubKey,
-		amt, feeLimit,
+		amt, cfg.Rebalance.FeeLimitRate,
 		LoopAttemptFailure,
 	))
 	return false

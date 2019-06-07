@@ -64,6 +64,14 @@ func main() {
 
 	db := openDatabase()
 
+	if len(args) == 0 {
+		// TODO - generate usage message here
+		for _, val := range cfg.Recommend.PeerNodeBlacklist {
+			fmt.Println(val)
+		}
+		os.Exit(0)
+	}
+	
 	cmd := args[0]
 	switch cmd {
 	case "channels": { listChannels(cfg, client, ctx, db) }

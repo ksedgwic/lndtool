@@ -37,18 +37,13 @@ func NewPotentialLoop(
 	}
 }
 
-var minImbalance = int64(1000)
-var feeLimitRate = float64(0.0005)
-var amountLimit = int64(10000)
-var recentSecs = int64(1 * 60 * 60)
-
-var blacklist = map[string]bool {
-	"02e9046555a9665145b0dbd7f135744598418df7d61d3660659641886ef1274844": true,
-	"0232fe448d6f8e9e8e54394f3dc5b35013b7a3a3cd227ffce1bb81cc8d285cf0a5": true,
-}
-
 func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, args []string) bool {
 
+	var blacklist = map[string]bool{}
+	for _, node := range cfg.Recommend.PeerNodeBlacklist {
+		blacklist[node] = true
+	}
+	
 	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
 		ActiveOnly: true,
 		InactiveOnly: false,
@@ -89,7 +84,7 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 			srcImbalance :=
 				srcChan.LocalBalance -
 				((srcChan.LocalBalance + srcChan.RemoteBalance) / 2)
-			if srcImbalance < minImbalance {
+			if srcImbalance < cfg.Recommend.MinImbalance {
 				continue
 			}
 			
@@ -97,7 +92,7 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 			dstImbalance :=
 				dstChan.LocalBalance -
 				((dstChan.LocalBalance + dstChan.RemoteBalance) / 2)
-			if dstImbalance > -minImbalance {
+			if dstImbalance > -cfg.Recommend.MinImbalance {
 				continue
 			}
 
@@ -125,17 +120,17 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 	for _, loop := range loops {
 		// Limit the rebalance amount
 		amount := loop.Amount
-		if amount > amountLimit {
-			amount = amountLimit
+		if amount > cfg.Recommend.TransferAmount {
+			amount = cfg.Recommend.TransferAmount
 		}
 			
 		// Consider recent history
-		tstamp := time.Now().Unix() - recentSecs
-		if !recentlyFailed(db, loop.SrcChan, loop.DstChan, tstamp, amount, feeLimitRate) {
+		tstamp := time.Now().Unix() - int64(cfg.Recommend.RetryInhibit.Seconds())
+		if !recentlyFailed(db, loop.SrcChan, loop.DstChan, tstamp, amount, cfg.Rebalance.FeeLimitRate) {
 
-			fmt.Printf("./lndtool rebalance %d %d %d %f\n",
-				amount, loop.SrcChan, loop.DstChan, feeLimitRate)
-			doRebalance(cfg, client, router, ctx, db, amount, loop.SrcChan, loop.DstChan, feeLimitRate)
+			fmt.Printf("./lndtool rebalance %d %d %d\n",
+				amount, loop.SrcChan, loop.DstChan)
+			doRebalance(cfg, client, router, ctx, db, amount, loop.SrcChan, loop.DstChan)
 			return true
 		}
 	}
