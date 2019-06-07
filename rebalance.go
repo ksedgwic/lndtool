@@ -15,7 +15,9 @@ import (
     "github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 )
 
-var ignoreBadEdges = true
+var ignoreBadEdges = true			// Ignore bad edges on subsequent QueryRoutes
+var finalCLTVDelta = uint32(144)
+
 
 func hopPolicy(client lnrpc.LightningClient, ctx context.Context,
 	chanId uint64, dstNode string) *lnrpc.RoutingPolicy {
@@ -29,8 +31,6 @@ func hopPolicy(client lnrpc.LightningClient, ctx context.Context,
 		return chanInfo.Node1Policy
 	}
 }
-
-var finalCLTVDelta = uint32(144)
 
 func dumpRoute(client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {

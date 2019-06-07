@@ -40,7 +40,7 @@ func NewPotentialLoop(
 var minImbalance = int64(1000)
 var feeLimitRate = float64(0.0005)
 var amountLimit = int64(10000)
-var recentSecs = int64(2 * 60 * 60)
+var recentSecs = int64(1 * 60 * 60)
 
 var blacklist = map[string]bool {
 	"02e9046555a9665145b0dbd7f135744598418df7d61d3660659641886ef1274844": true,
