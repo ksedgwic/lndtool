@@ -47,7 +47,7 @@ var blacklist = map[string]bool {
 	"0232fe448d6f8e9e8e54394f3dc5b35013b7a3a3cd227ffce1bb81cc8d285cf0a5": true,
 }
 
-func recommend(client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, args []string) bool {
+func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, args []string) bool {
 
 	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
 		ActiveOnly: true,
@@ -135,7 +135,7 @@ func recommend(client lnrpc.LightningClient, router routerrpc.RouterClient, ctx 
 
 			fmt.Printf("./lndtool rebalance %d %d %d %f\n",
 				amount, loop.SrcChan, loop.DstChan, feeLimitRate)
-			doRebalance(client, router, ctx, db, amount, loop.SrcChan, loop.DstChan, feeLimitRate)
+			doRebalance(cfg, client, router, ctx, db, amount, loop.SrcChan, loop.DstChan, feeLimitRate)
 			return true
 		}
 	}

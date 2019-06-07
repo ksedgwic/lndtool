@@ -19,7 +19,7 @@ func abbrevPubKey(pubkey string) string {
 	return pubkey
 }
 
-func listChannels(client lnrpc.LightningClient, ctx context.Context, db *sql.DB) {
+func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context, db *sql.DB) {
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
     if err != nil {
 		panic(fmt.Sprint("GetInfo failed:", err))

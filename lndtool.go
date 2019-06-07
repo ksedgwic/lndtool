@@ -66,18 +66,18 @@ func main() {
 
 	cmd := args[0]
 	switch cmd {
-	case "channels": { listChannels(client, ctx, db) }
-	case "farside": { farSide(client, ctx) }
-	case "rebalance": { rebalance(client, router, ctx, db, args[1:]) }
-	case "recommend": { recommend(client, router, ctx, db, args[1:]) }
+	case "channels": { listChannels(cfg, client, ctx, db) }
+	case "farside": { farSide(cfg, client, ctx) }
+	case "rebalance": { rebalance(cfg, client, router, ctx, db, args[1:]) }
+	case "recommend": { recommend(cfg, client, router, ctx, db, args[1:]) }
 	case "autobalance": {
 		for {
-			if !recommend(client, router, ctx, db, args[1:]) {
+			if !recommend(cfg, client, router, ctx, db, args[1:]) {
 				break
 			}
 		}
 	}
-	case "mkdb": { createDatabase(db) }
+	case "mkdb": { createDatabase(cfg, db) }
 	default: {
         fmt.Printf("command \"%s\" unknown\n", cmd)
 		os.Exit(1)

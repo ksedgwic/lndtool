@@ -58,7 +58,7 @@ func openDatabase() (*sql.DB) {
 	return db
 }
 
-func createDatabase(db *sql.DB) {
+func createDatabase(cfg *config, db *sql.DB) {
 	cmds := []string{`
         CREATE TABLE IF NOT EXISTS loop_attempt (
 	        id INTEGER PRIMARY KEY,

@@ -20,6 +20,8 @@ const (
 	defaultMacaroonFilename	  = "admin.macaroon"
 	defaultRPCPort            = "10009"
 	defaultRPCHost			  = "localhost"
+
+	defaultFinalCLTVDelta     = uint32(144)
 )
 
 var (
@@ -33,6 +35,10 @@ var (
 	defaultRPCServer        = defaultRPCHost + ":" + defaultRPCPort
 )
 
+type rebalanceConfig struct {
+	FinalCLTVDelta		uint32	`long:"finalcltvdelta" description:"Final CLTV delta"`
+}
+
 type config struct {
 
 	LndDir          string   `long:"lnddir" description:"The base directory that contains lnd's data, logs, configuration file, etc."`
@@ -43,6 +49,8 @@ type config struct {
 
 	MacaroonPath    string   `long:"macaroonpath" description:"path to macaroon file"`
 	RPCServer		string   `long:"rpcserver" description:"host:port of ln daemon"`
+
+	Rebalance		*rebalanceConfig	`group:"Rebalance" namespace:"rebalance"`
 }
 
 func loadConfig() (*config, []string, error) {
@@ -53,6 +61,9 @@ func loadConfig() (*config, []string, error) {
 		TLSCertPath:    defaultTLSCertPath,
 		MacaroonPath:	defaultMacaroonPath,
 		RPCServer:		defaultRPCServer,
+		Rebalance:		&rebalanceConfig{
+			FinalCLTVDelta:		defaultFinalCLTVDelta,
+		},
 	}
 
 	// Pre-parse the command line options to pick up an alternative
@@ -97,6 +108,12 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
+	// As soon as we're done parsing configuration options, ensure all paths
+	// to directories and files are cleaned and expanded before attempting
+	// to use them later on.
+	cfg.TLSCertPath = cleanAndExpandPath(cfg.TLSCertPath)
+	cfg.MacaroonPath = cleanAndExpandPath(cfg.MacaroonPath)
+	
 	// Warn about missing config file only after all other configuration is
 	// done.  This prevents the warning on help messages and invalid
 	// options.  Note this should go directly before the return.

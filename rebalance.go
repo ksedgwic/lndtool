@@ -16,10 +16,8 @@ import (
 )
 
 var ignoreBadEdges = true			// Ignore bad edges on subsequent QueryRoutes
-var finalCLTVDelta = uint32(144)
 
-
-func hopPolicy(client lnrpc.LightningClient, ctx context.Context,
+func hopPolicy(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	chanId uint64, dstNode string) *lnrpc.RoutingPolicy {
 	chanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{ChanId: chanId})
 	if err != nil {
@@ -32,7 +30,7 @@ func hopPolicy(client lnrpc.LightningClient, ctx context.Context,
 	}
 }
 
-func dumpRoute(client lnrpc.LightningClient, ctx context.Context,
+func dumpRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 
 	fmt.Println("ChanId               Capacity     Amt    AmtMsat  Fee  FeeMsat Dlt PubKey                                                                   FB   FR  Dlt Alias")
@@ -52,7 +50,7 @@ func dumpRoute(client lnrpc.LightningClient, ctx context.Context,
 	policies := []*lnrpc.RoutingPolicy{}
 	for _, hop := range route.Hops {
 		policies = append(policies,
-			hopPolicy(client, ctx, hop.ChanId, hop.PubKey))
+			hopPolicy(cfg, client, ctx, hop.ChanId, hop.PubKey))
 	}
 	
 	for ndx, hop := range route.Hops {
@@ -104,11 +102,11 @@ func dumpRoute(client lnrpc.LightningClient, ctx context.Context,
 }
 
 func repriceRoute(
-	client lnrpc.LightningClient, ctx context.Context,
+	cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
 	ll := len(route.Hops)
 	
-	sumDelta := finalCLTVDelta
+	sumDelta := cfg.Rebalance.FinalCLTVDelta
 	lastDelta := uint32(0)
 	
 	sumFeeMsat := int64(0)
@@ -118,7 +116,7 @@ func repriceRoute(
 	
 	for ndx := ll - 1; ndx >= 0; ndx-- {
 		hop := route.Hops[ndx]
-		sndPolicy := hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
+		sndPolicy := hopPolicy(cfg, client, ctx, hop.ChanId, hop.PubKey)
 
 		hop.Expiry = info.BlockHeight + sumDelta
 		
@@ -148,11 +146,11 @@ func repriceRoute(
 	route.TotalAmt = ((amt * 1000) + sumFeeMsat) / 1000
 }
 
-func checkRoute(client lnrpc.LightningClient, ctx context.Context,
+func checkRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	ll := len(route.Hops)
 	
-	sumDelta := finalCLTVDelta
+	sumDelta := cfg.Rebalance.FinalCLTVDelta
 	lastDelta := uint32(0)
 	
 	sumFeeMsat := int64(0)
@@ -160,7 +158,7 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context,
 	
 	for ndx := ll - 1; ndx >= 0; ndx-- {
 		hop := route.Hops[ndx]
-		sndPolicy := hopPolicy(client, ctx, hop.ChanId, hop.PubKey)
+		sndPolicy := hopPolicy(cfg, client, ctx, hop.ChanId, hop.PubKey)
 
 		if hop.Expiry - info.BlockHeight != sumDelta {
 			panic(fmt.Sprintf("bad expiry on hop %d", ndx))
@@ -190,7 +188,7 @@ func checkRoute(client lnrpc.LightningClient, ctx context.Context,
 	}
 }
 
-func rebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, args []string) {
+func rebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, args []string) {
 	amti, err := strconv.Atoi(args[0])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse amount:", err))
@@ -217,10 +215,10 @@ func rebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ctx 
 		}
 	}
 
-	doRebalance(client, router, ctx, db, amt, srcChanId, dstChanId, feeLimit)
+	doRebalance(cfg, client, router, ctx, db, amt, srcChanId, dstChanId, feeLimit)
 }
 
-func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, amt int64, srcChanId, dstChanId uint64, feeLimit float64) bool {
+func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, amt int64, srcChanId, dstChanId uint64, feeLimit float64) bool {
 	
 	// What is our own PubKey?
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
@@ -292,7 +290,7 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 				},
 			},
 			SourcePubKey: srcPubKey,
-			FinalCltvDelta: int32(finalCLTVDelta),
+			FinalCltvDelta: int32(cfg.Rebalance.FinalCLTVDelta),
 			IgnoredEdges: badEdges,
 			IgnoredNodes: [][]byte{ ourNode },
 		})
@@ -340,11 +338,11 @@ func doRebalance(client lnrpc.LightningClient, router routerrpc.RouterClient, ct
 		}
 		route.Hops = append(route.Hops, hopN)
 		
-		repriceRoute(client, ctx, info, route, amt)
+		repriceRoute(cfg, client, ctx, info, route, amt)
 			
-		dumpRoute(client, ctx, info, route)
+		dumpRoute(cfg, client, ctx, info, route)
 
-		checkRoute(client, ctx, info, route)
+		checkRoute(cfg, client, ctx, info, route)
 
 		if (route.TotalFeesMsat / 1000) > feeLimitFixed {
 			fmt.Println("route exceeds fee limit")
