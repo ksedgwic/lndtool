@@ -4,12 +4,9 @@ package main
 
 import (
 	"context"
-	"flag"
     "fmt"
     "io/ioutil"
 	"os"
-    "os/user"
-    "path"
 	
     "github.com/lightningnetwork/lnd/lnrpc"
     "github.com/lightningnetwork/lnd/lnrpc/routerrpc"
@@ -23,27 +20,20 @@ import (
 var edgeLimit map[*lnrpc.EdgeLocator]int64
 
 func main() {
-
 	edgeLimit = map[*lnrpc.EdgeLocator]int64{}
 	
-	flag.Parse()
-	
-    usr, err := user.Current()
-    if err != nil {
-        fmt.Println("Cannot get current user:", err)
-        return
-    }
-    tlsCertPath := path.Join(usr.HomeDir, ".lnd/tls.cert")
-    macaroonPath := path.Join(usr.HomeDir,
-		".lnd/data/chain/bitcoin/mainnet/admin.macaroon")
+	cfg, args, err := loadConfig()
+	if err != nil {
+		panic(fmt.Sprintf("loadConfig failed: %v", err))
+	}
 
-    tlsCreds, err := credentials.NewClientTLSFromFile(tlsCertPath, "")
+    tlsCreds, err := credentials.NewClientTLSFromFile(cfg.TLSCertPath, "")
     if err != nil {
         fmt.Println("Cannot get node tls credentials", err)
         return
     }
 
-    macaroonBytes, err := ioutil.ReadFile(macaroonPath)
+    macaroonBytes, err := ioutil.ReadFile(cfg.MacaroonPath)
     if err != nil {
         fmt.Println("Cannot read macaroon file", err)
         return
@@ -63,7 +53,7 @@ func main() {
 			grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 50)),
     }
 
-    conn, err := grpc.Dial("localhost:10009", opts...)
+    conn, err := grpc.Dial(cfg.RPCServer, opts...)
     if err != nil {
         fmt.Println("cannot dial to lnd", err)
         return
@@ -74,15 +64,15 @@ func main() {
 
 	db := openDatabase()
 
-	cmd := flag.Args()[0]
+	cmd := args[0]
 	switch cmd {
 	case "channels": { listChannels(client, ctx, db) }
 	case "farside": { farSide(client, ctx) }
-	case "rebalance": { rebalance(client, router, ctx, db, flag.Args()[1:]) }
-	case "recommend": { recommend(client, router, ctx, db, flag.Args()[1:]) }
+	case "rebalance": { rebalance(client, router, ctx, db, args[1:]) }
+	case "recommend": { recommend(client, router, ctx, db, args[1:]) }
 	case "autobalance": {
 		for {
-			if !recommend(client, router, ctx, db, flag.Args()[1:]) {
+			if !recommend(client, router, ctx, db, args[1:]) {
 				break
 			}
 		}
