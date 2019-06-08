@@ -10,6 +10,7 @@
 *.out
 *.so
 *.test
+/ID
 /SAMPLE.log
 /channel-lists
 /lndtool

@@ -46,6 +46,8 @@ type rebalanceConfig struct {
 }
 
 type recommendConfig struct {
+	SrcChanTarget		[]uint64	`long:"srcchantarget" description:"Adds channel to source target list (default: all)"`
+	DstChanTarget		[]uint64	`long:"dstchantarget" description:"Adds channel to destination target list (default: all)"`
 	PeerNodeBlacklist	[]string	`long:"peernodeblacklist" description:"Adds node to peers to skip"`
 	MinImbalance		int64		`long:"minimbalance" description:"Minimum imbalance to consider rebalancing"`
 	TransferAmount		int64		`long:"transferamount" description:"Size of rebalance transfers"`
@@ -80,6 +82,8 @@ func loadConfig() (*config, []string, error) {
 			FeeLimitRate:		defaultFeeLimitRate,
 		},
 		Recommend:		&recommendConfig{
+			SrcChanTarget:		[]uint64{},
+			DstChanTarget:		[]uint64{},
 			PeerNodeBlacklist:	[]string{},
 			MinImbalance:		defaultMinImbalance,
 			TransferAmount:		defaultTransferAmount,

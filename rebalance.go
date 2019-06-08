@@ -271,8 +271,8 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 			}
 		}
 		
-		fmt.Printf("querying possible routes, ignoring %d edges\n",
-			len(badEdges))
+		fmt.Printf("querying possible routes, fee limit %d sat, ignoring %d edges\n",
+			feeLimitFixed, len(badEdges))
 		rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
 			PubKey: dstPubKey,
 			Amt: amt,

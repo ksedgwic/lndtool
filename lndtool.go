@@ -8,6 +8,7 @@ import (
     "io/ioutil"
 	"os"
 	
+	"github.com/davecgh/go-spew/spew"
     "github.com/lightningnetwork/lnd/lnrpc"
     "github.com/lightningnetwork/lnd/lnrpc/routerrpc"
     "github.com/lightningnetwork/lnd/macaroons"
@@ -66,9 +67,7 @@ func main() {
 
 	if len(args) == 0 {
 		// TODO - generate usage message here
-		for _, val := range cfg.Recommend.PeerNodeBlacklist {
-			fmt.Println(val)
-		}
+		spew.Dump(cfg)
 		os.Exit(0)
 	}
 	

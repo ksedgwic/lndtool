@@ -43,6 +43,14 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 	for _, node := range cfg.Recommend.PeerNodeBlacklist {
 		blacklist[node] = true
 	}
+	var srclist = map[uint64]bool{}
+	for _, node := range cfg.Recommend.SrcChanTarget {
+		srclist[node] = true
+	}
+	var dstlist = map[uint64]bool{}
+	for _, node := range cfg.Recommend.DstChanTarget {
+		dstlist[node] = true
+	}
 	
 	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
 		ActiveOnly: true,
@@ -57,16 +65,26 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 	// Consider all combinations of channels
 	loops := []*PotentialLoop{}
 	for srcNdx, srcChan := range rsp.Channels {
-		
+
 		// Is this node blacklisted?
 		if blacklist[srcChan.RemotePubkey] {
 			continue
 		}
+
+		// Is there a source list?  Is this channel in it?
+		if len(srclist) > 0 && !srclist[srcChan.ChanId] {
+			continue
+		}
 		
 		for dstNdx, dstChan := range rsp.Channels {
-			
+		
 			// Is this node blacklisted?
 			if blacklist[dstChan.RemotePubkey] {
+				continue
+			}
+			
+			// Is there a dest list?  Is this channel in it?
+			if len(dstlist) > 0 && !dstlist[dstChan.ChanId] {
 				continue
 			}
 			
