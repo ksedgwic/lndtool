@@ -8,10 +8,58 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 	
+	// "github.com/davecgh/go-spew/spew"
 	"github.com/gookit/color"
     "github.com/lightningnetwork/lnd/lnrpc"
 )
+
+type FwdStatsElem struct {
+	CountRcv	uint64
+	AmountRcv	uint64
+	FeeMsatRcv	uint64
+	
+	CountSnd	uint64
+	AmountSnd	uint64
+	FeeMsatSnd	uint64
+}
+
+type FwdStats map[uint64]*FwdStatsElem
+
+func getFwdStats(cfg *config, client lnrpc.LightningClient, ctx context.Context) *FwdStats {
+	retval := FwdStats{}
+	
+	hist, err := client.ForwardingHistory(ctx, &lnrpc.ForwardingHistoryRequest{
+		EndTime: uint64(time.Now().Unix()),
+	})
+    if err != nil {
+		panic(fmt.Sprint("ForwardingHistory failed: %v\n", err))
+    }
+
+	for _, evt := range hist.ForwardingEvents {
+		rcvElem, ok := retval[evt.ChanIdIn]
+		if !ok {
+			rcvElem = &FwdStatsElem{}
+			retval[evt.ChanIdIn] = rcvElem
+		}
+		sndElem, ok := retval[evt.ChanIdOut]
+		if !ok {
+			sndElem = &FwdStatsElem{}
+			retval[evt.ChanIdOut] = sndElem
+		}
+
+		rcvElem.CountRcv += 1
+		rcvElem.AmountRcv += evt.AmtIn
+		rcvElem.FeeMsatRcv += evt.FeeMsat
+
+		sndElem.CountSnd += 1
+		sndElem.AmountSnd += evt.AmtOut
+		sndElem.FeeMsatSnd += evt.FeeMsat
+	}
+
+	return &retval
+}
 
 func abbrevPubKey(pubkey string) string {
 	// ll := len(pubkey)
@@ -20,9 +68,12 @@ func abbrevPubKey(pubkey string) string {
 }
 
 func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context, db *sql.DB) {
+
+	fwdStats := getFwdStats(cfg, client, ctx)
+	
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
     if err != nil {
-		panic(fmt.Sprint("GetInfo failed:", err))
+		panic(fmt.Sprint("GetInfo failed: %v\n", err))
     }
 	
 	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
@@ -35,11 +86,13 @@ func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context
 		panic(fmt.Sprint("ListChannels failed:", err))
     }
 
-	color.Bold.Println("ChanId             Flg  Capacity     Local    Remote  Imbalance R E S T E S PubKey                                                             Log Alias")
+	color.Bold.Println("ChanId             Flg  Capacity     Local    Remote  Imbalance  FwdRcv  FwdSnd PubKey                                                             Log Alias")
 		
 	sumCapacity := int64(0)
 	sumLocal := int64(0)
 	sumRemote := int64(0)
+	sumFwdRcv := uint64(0)
+	sumFwdSnd := uint64(0)
 	sort.SliceStable(rsp.Channels, func(ii, jj int) bool {
 		return rsp.Channels[ii].ChanId < rsp.Channels[jj].ChanId
 	})
@@ -86,6 +139,9 @@ func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context
 			active = "I"
 		}
 
+		imbalance := chn.LocalBalance -
+			((chn.LocalBalance + chn.RemoteBalance) / 2)
+		
 		chanStats := chanStats(db, chn.ChanId)
 		chnStatsStr := fmt.Sprintf("%1.0f %1.0f %1.0f %1.0f %1.0f %1.0f",
 			math.Log10(float64(chanStats.RcvCnt+1)),
@@ -95,9 +151,27 @@ func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context
 			math.Log10(float64(chanStats.SndErr+1)),
 			math.Log10(float64(chanStats.SndSat+1)),
 		)
-		
-		imbalance := chn.LocalBalance -
-			((chn.LocalBalance + chn.RemoteBalance) / 2)
+		_ = chnStatsStr
+
+		chnFwdStats := (*fwdStats)[chn.ChanId]
+		if chnFwdStats == nil {
+			chnFwdStats = &FwdStatsElem{}
+		}
+		chnFwdStatsStr := ""
+		if chnFwdStats.AmountRcv > 0 {
+			chnFwdStatsStr +=
+				fmt.Sprintf("%7.1e ", float64(chnFwdStats.AmountRcv))
+		} else {
+			chnFwdStatsStr += "        "
+		}
+		if chnFwdStats.AmountSnd > 0 {
+			chnFwdStatsStr +=
+				fmt.Sprintf("%7.1e", float64(chnFwdStats.AmountSnd))
+		} else {
+			chnFwdStatsStr += "       "
+		}
+		sumFwdRcv += chnFwdStats.AmountRcv
+		sumFwdSnd += chnFwdStats.AmountSnd
 		
 		str := fmt.Sprintf("%d %s%s%s %9d %9d %9d %10d %s %s %3.1f %s",
 			chn.ChanId,
@@ -108,7 +182,8 @@ func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context
 			chn.LocalBalance,
 			chn.RemoteBalance,
 			imbalance,
-			chnStatsStr,
+			// chnStatsStr,
+			chnFwdStatsStr,
 			abbrevPubKey(chn.RemotePubkey),
 			math.Log10(float64(rmtCap)),
 			alias,
@@ -145,7 +220,7 @@ func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context
 		rmtCap := nodeInfo.TotalCapacity
 		alias := nodeInfo.Node.Alias
 
-		chnStatsStr := "           "
+		chnFwdStatsStr := "               "
 		
 		imbalance := chn2.Channel.LocalBalance -
 			((chn2.Channel.LocalBalance + chn2.Channel.RemoteBalance) / 2)
@@ -158,7 +233,7 @@ func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context
 			chn2.Channel.LocalBalance,
 			chn2.Channel.RemoteBalance,
 			imbalance,
-			chnStatsStr,
+			chnFwdStatsStr,
 			abbrevPubKey(chn2.Channel.RemoteNodePub),
 			math.Log10(float64(rmtCap)),
 			alias,
@@ -170,12 +245,13 @@ func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context
 	
 	imbalance := sumLocal - ((sumLocal + sumRemote) / 2)
 	
-	color.Bold.Printf("%2d                     %9d %9d %9d %10d             %s %3.1f %s\n",
+	color.Bold.Printf("%2d                     %9d %9d %9d %10d %7.1e %7.1e %s %3.1f %s\n",
 		len(rsp.Channels) + len(pendingChannels.PendingOpenChannels),
 		sumCapacity,
 		sumLocal,
 		sumRemote,
 		imbalance,
+		float64(sumFwdRcv), float64(sumFwdSnd),
 		abbrevPubKey(info.IdentityPubkey),
 		math.Log10(float64(sumCapacity)),
 		info.Alias,
