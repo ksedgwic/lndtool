@@ -380,7 +380,7 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 			Route: route,
 		})
 		if err != nil {
-			fmt.Printf("router.SendToRoute failed:", err)
+			fmt.Printf("router.SendToRoute failed: %v\n", err)
 			goto FailedToRoute
 		}
 
@@ -417,7 +417,10 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 					if err != nil {
 						panic(fmt.Sprintf("hop GetChanInfo failed:", err))
 					}
-					reverse := nextChanInfo.Node2Pub == pubKey
+					reverse := false
+					if nextChanInfo.Node2Pub == pubKey {
+						reverse = true
+					}
 
 					if ignoreBadEdges {
 						// Append this edge to the ignoredEdges and re-route.
