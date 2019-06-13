@@ -25,7 +25,7 @@ func main() {
 
 	cfg, args, err := loadConfig()
 	if err != nil {
-		panic(fmt.Sprintf("loadConfig failed: %v", err))
+		os.Exit(0)
 	}
 
 	tlsCreds, err := credentials.NewClientTLSFromFile(cfg.TLSCertPath, "")
@@ -67,12 +67,15 @@ func main() {
 
 	if len(args) == 0 {
 		// TODO - generate usage message here
-		spew.Dump(cfg)
 		os.Exit(0)
 	}
 
 	cmd := args[0]
 	switch cmd {
+	case "dumpconfig":
+		{
+			spew.Dump(cfg)
+		}
 	case "channels":
 		{
 			listChannels(cfg, client, ctx, db)

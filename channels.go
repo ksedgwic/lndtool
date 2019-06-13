@@ -98,7 +98,7 @@ func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context
 		panic(fmt.Sprint("ListChannels failed:", err))
 	}
 
-	color.Bold.Println("ChanId             Flg  Capacity     Local    Remote  Imbalance  FwdR  FwdS PubKey                                                             Log Alias")
+	color.Bold.Println("ChanId             Flg  Capacity     Local    Remote  Imbalance FwdR  FwdS  PubKey                                                             Log Alias")
 
 	sumCapacity := int64(0)
 	sumLocal := int64(0)

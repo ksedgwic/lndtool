@@ -143,7 +143,7 @@ func loadConfig() (*config, []string, error) {
 	// options.  Note this should go directly before the return.
 	if configFileError != nil {
 		// ltndLog.Warnf("%v", configFileError)
-		fmt.Printf("%v", configFileError)
+		fmt.Printf("%v\n", configFileError)
 	}
 
 	return &cfg, args, nil
