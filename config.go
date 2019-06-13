@@ -21,6 +21,8 @@ const (
 	defaultRPCPort          = "10009"
 	defaultRPCHost          = "localhost"
 
+	defaultStatsWindow = (time.Hour * 24 * 30)
+
 	defaultFinalCLTVDelta = uint32(144)
 	defaultFeeLimitRate   = float64(0.0005)
 
@@ -39,6 +41,10 @@ var (
 	)
 	defaultRPCServer = defaultRPCHost + ":" + defaultRPCPort
 )
+
+type channelsConfig struct {
+	StatsWindow time.Duration `long:"statswindow" description:"Time window for channel statistics"`
+}
 
 type rebalanceConfig struct {
 	FinalCLTVDelta uint32  `long:"finalcltvdelta" description:"Final CLTV delta"`
@@ -64,6 +70,7 @@ type config struct {
 	MacaroonPath string `long:"macaroonpath" description:"path to macaroon file"`
 	RPCServer    string `long:"rpcserver" description:"host:port of ln daemon"`
 
+	Channels  *channelsConfig  `group:"Channels" namespace:"channels"`
 	Rebalance *rebalanceConfig `group:"Rebalance" namespace:"rebalance"`
 	Recommend *recommendConfig `group:"Recommend" namespace:"recommend"`
 }
@@ -76,6 +83,9 @@ func loadConfig() (*config, []string, error) {
 		TLSCertPath:  defaultTLSCertPath,
 		MacaroonPath: defaultMacaroonPath,
 		RPCServer:    defaultRPCServer,
+		Channels: &channelsConfig{
+			StatsWindow: defaultStatsWindow,
+		},
 		Rebalance: &rebalanceConfig{
 			FinalCLTVDelta: defaultFinalCLTVDelta,
 			FeeLimitRate:   defaultFeeLimitRate,

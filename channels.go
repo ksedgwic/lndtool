@@ -31,7 +31,8 @@ func getFwdStats(cfg *config, client lnrpc.LightningClient, ctx context.Context)
 	retval := FwdStats{}
 
 	hist, err := client.ForwardingHistory(ctx, &lnrpc.ForwardingHistoryRequest{
-		EndTime: uint64(time.Now().Unix()),
+		StartTime: uint64((time.Now().Add(-cfg.Channels.StatsWindow)).Unix()),
+		EndTime:   uint64(time.Now().Unix()),
 	})
 	if err != nil {
 		panic(fmt.Sprint("ForwardingHistory failed: %v\n", err))
