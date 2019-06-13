@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"strconv"
 	"time"
-	
-    "github.com/lightningnetwork/lnd/lnrpc"
-    "github.com/lightningnetwork/lnd/lnrpc/routerrpc"
+
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 )
 
-var ignoreBadEdges = true			// Ignore bad edges on subsequent QueryRoutes
+var ignoreBadEdges = true // Ignore bad edges on subsequent QueryRoutes
 
 func hopPolicy(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	chanId uint64, dstNode string) *lnrpc.RoutingPolicy {
@@ -34,13 +34,13 @@ func dumpRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 
 	fmt.Println("ChanId               Capacity     Amt    AmtMsat  Fee  FeeMsat Dlt PubKey                                                                   FB   FR  Dlt Alias")
-	
+
 	fmt.Printf("%29s %7d %10d %12s %4d %s %18s %s\n",
-		"", 
+		"",
 		route.TotalAmt,
 		route.TotalAmtMsat,
 		"",
-		route.TotalTimeLock - info.BlockHeight,
+		route.TotalTimeLock-info.BlockHeight,
 		info.IdentityPubkey,
 		"",
 		info.Alias,
@@ -52,7 +52,7 @@ func dumpRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 		policies = append(policies,
 			hopPolicy(cfg, client, ctx, hop.ChanId, hop.PubKey))
 	}
-	
+
 	for ndx, hop := range route.Hops {
 		nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
 			PubKey: hop.PubKey,
@@ -64,7 +64,7 @@ func dumpRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 
 		// The policy information comes from the next hop.
 		pstr := ""
-		if ndx < len(route.Hops) - 1 {
+		if ndx < len(route.Hops)-1 {
 			pstr = fmt.Sprintf("%7d %4d %4d",
 				policies[ndx+1].FeeBaseMsat,
 				policies[ndx+1].FeeRateMilliMsat,
@@ -77,7 +77,7 @@ func dumpRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 				0,
 			)
 		}
-		
+
 		fmt.Printf("%d %10d %7d %10d %4d %7d %4d %s %18s %s\n",
 			hop.ChanId,
 			hop.ChanCapacity,
@@ -85,7 +85,7 @@ func dumpRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 			hop.AmtToForwardMsat,
 			hop.Fee,
 			hop.FeeMsat,
-			hop.Expiry - info.BlockHeight,
+			hop.Expiry-info.BlockHeight,
 			hop.PubKey,
 			pstr,
 			alias,
@@ -105,25 +105,25 @@ func repriceRoute(
 	cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
 	ll := len(route.Hops)
-	
+
 	sumDelta := cfg.Rebalance.FinalCLTVDelta
 	lastDelta := uint32(0)
-	
+
 	sumFeeMsat := int64(0)
 	lastFeeMsat := int64(0)
 
 	amtToFwdMsat := amt * 1000
-	
+
 	for ndx := ll - 1; ndx >= 0; ndx-- {
 		hop := route.Hops[ndx]
 		sndPolicy := hopPolicy(cfg, client, ctx, hop.ChanId, hop.PubKey)
 
 		hop.Expiry = info.BlockHeight + sumDelta
-		
-		if ndx != ll - 1 {
+
+		if ndx != ll-1 {
 			sumDelta += lastDelta
 		}
-		
+
 		lastDelta = sndPolicy.TimeLockDelta
 
 		hop.FeeMsat = lastFeeMsat
@@ -133,12 +133,12 @@ func repriceRoute(
 
 		amtToFwdMsat += lastFeeMsat
 		sumFeeMsat += lastFeeMsat
-		
+
 		lastFeeMsat =
 			sndPolicy.FeeBaseMsat +
-			(hop.AmtToForwardMsat * sndPolicy.FeeRateMilliMsat) / 1000000
+				(hop.AmtToForwardMsat*sndPolicy.FeeRateMilliMsat)/1000000
 	}
-	
+
 	route.TotalTimeLock = info.BlockHeight + sumDelta
 	route.TotalFeesMsat = sumFeeMsat
 	route.TotalFees = sumFeeMsat / 1000
@@ -149,22 +149,22 @@ func repriceRoute(
 func checkRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	ll := len(route.Hops)
-	
+
 	sumDelta := cfg.Rebalance.FinalCLTVDelta
 	lastDelta := uint32(0)
-	
+
 	sumFeeMsat := int64(0)
 	lastFeeMsat := int64(0)
-	
+
 	for ndx := ll - 1; ndx >= 0; ndx-- {
 		hop := route.Hops[ndx]
 		sndPolicy := hopPolicy(cfg, client, ctx, hop.ChanId, hop.PubKey)
 
-		if hop.Expiry - info.BlockHeight != sumDelta {
+		if hop.Expiry-info.BlockHeight != sumDelta {
 			panic(fmt.Sprintf("bad expiry on hop %d", ndx))
 		}
-		
-		if ndx != ll - 1 {
+
+		if ndx != ll-1 {
 			sumDelta += lastDelta
 		}
 
@@ -175,12 +175,12 @@ func checkRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 				ndx, lastFeeMsat, hop.FeeMsat))
 		}
 		sumFeeMsat += lastFeeMsat
-		
+
 		lastFeeMsat =
 			sndPolicy.FeeBaseMsat +
-			(hop.AmtToForwardMsat * sndPolicy.FeeRateMilliMsat) / 1000000
+				(hop.AmtToForwardMsat*sndPolicy.FeeRateMilliMsat)/1000000
 	}
-	if route.TotalTimeLock - info.BlockHeight != sumDelta {
+	if route.TotalTimeLock-info.BlockHeight != sumDelta {
 		panic(fmt.Sprintf("bad route total"))
 	}
 	if route.TotalFeesMsat != sumFeeMsat {
@@ -194,13 +194,13 @@ func rebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 		panic(fmt.Sprintf("failed to parse amount:", err))
 	}
 	amt := int64(amti)
-	
+
 	srcChanIdI, err := strconv.Atoi(args[1])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse srcChanId:", err))
 	}
 	srcChanId := uint64(srcChanIdI)
-	
+
 	dstChanIdI, err := strconv.Atoi(args[2])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse dstChanId:", err))
@@ -211,35 +211,35 @@ func rebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 }
 
 func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, amt int64, srcChanId, dstChanId uint64) bool {
-	
+
 	// What is our own PubKey?
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
-    if err != nil {
+	if err != nil {
 		panic(fmt.Sprintf("GetInfo failed[1]:", err))
-    }
+	}
 	ourPubKey := info.IdentityPubkey
 
 	// What is the src pub key?
 	srcChanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
 		ChanId: srcChanId,
 	})
-    if err != nil {
+	if err != nil {
 		panic(fmt.Sprintf("src GetChanInfo failed:", err))
-    }
+	}
 	var srcPubKey string
 	if srcChanInfo.Node1Pub == ourPubKey {
 		srcPubKey = srcChanInfo.Node2Pub
 	} else {
 		srcPubKey = srcChanInfo.Node1Pub
 	}
-	
+
 	// What is the dst pub key?
 	dstChanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
 		ChanId: dstChanId,
 	})
-    if err != nil {
+	if err != nil {
 		panic(fmt.Sprintf("dst GetChanInfo failed:", err))
-    }
+	}
 	var dstPubKey string
 	if dstChanInfo.Node1Pub == ourPubKey {
 		dstPubKey = dstChanInfo.Node2Pub
@@ -255,36 +255,36 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 	var invoiceRsp *lnrpc.AddInvoiceResponse = nil
 
 	ourNode, err := hex.DecodeString(ourPubKey)
-    if err != nil {
+	if err != nil {
 		panic(fmt.Sprintf("hex.DecodeString failed:", err))
-    }
-	
+	}
+
 	for {
 	RetryQuery:
 		badEdges := []*lnrpc.EdgeLocator{}
 		if ignoreBadEdges {
 			// Reject all edges that are known to fail at this amount.
-			for edge, limitAmount := range(edgeLimit) {
+			for edge, limitAmount := range edgeLimit {
 				if amt >= limitAmount {
 					badEdges = append(badEdges, edge)
 				}
 			}
 		}
-		
+
 		fmt.Printf("querying possible routes, fee limit %d sat, ignoring %d edges\n",
 			feeLimitFixed, len(badEdges))
-		rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest {
+		rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest{
 			PubKey: dstPubKey,
-			Amt: amt,
+			Amt:    amt,
 			FeeLimit: &lnrpc.FeeLimit{
 				Limit: &lnrpc.FeeLimit_Fixed{
 					Fixed: feeLimitFixed,
 				},
 			},
-			SourcePubKey: srcPubKey,
+			SourcePubKey:   srcPubKey,
 			FinalCltvDelta: int32(cfg.Rebalance.FinalCLTVDelta),
-			IgnoredEdges: badEdges,
-			IgnoredNodes: [][]byte{ ourNode },
+			IgnoredEdges:   badEdges,
+			IgnoredNodes:   [][]byte{ourNode},
 		})
 
 		if err != nil {
@@ -304,24 +304,24 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 
 		// Prepend the initial hop from us through the src channel
 		hop0 := &lnrpc.Hop{
-			ChanId: srcChanId,
+			ChanId:       srcChanId,
 			ChanCapacity: srcChanInfo.Capacity,
 			AmtToForward: amt,
-			PubKey: srcPubKey,
+			PubKey:       srcPubKey,
 			// We will set all of these when we "reprice" the route.
 			// Fee:
 			// Expiry:
 			// AmtToForwardMsat:
 			// FeeMSat:
 		}
-		route.Hops = append([]*lnrpc.Hop{ hop0 }, route.Hops...)
+		route.Hops = append([]*lnrpc.Hop{hop0}, route.Hops...)
 
 		// Append the final hop back to us through the dst channel
 		hopN := &lnrpc.Hop{
-			ChanId: dstChanId,
+			ChanId:       dstChanId,
 			ChanCapacity: dstChanInfo.Capacity,
 			AmtToForward: amt,
-			PubKey: ourPubKey,
+			PubKey:       ourPubKey,
 			// We will set all of these when we "reprice" the route.
 			// Fee:
 			// Expiry:
@@ -329,9 +329,9 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 			// FeeMSat:
 		}
 		route.Hops = append(route.Hops, hopN)
-		
+
 		repriceRoute(cfg, client, ctx, info, route, amt)
-			
+
 		dumpRoute(cfg, client, ctx, info, route)
 
 		checkRoute(cfg, client, ctx, info, route)
@@ -350,11 +350,11 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 		}
 
 		ctxt, _ :=
-			context.WithTimeout(context.Background(), time.Second * 60,)
-		
+			context.WithTimeout(context.Background(), time.Second*60)
+
 		if invoiceRsp == nil {
 			fmt.Println("generating invoice")
-			
+
 			// Generate an invoice.
 			preimage := make([]byte, 32)
 			_, err = rand.Read(preimage)
@@ -377,7 +377,7 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 
 		sendRsp, err := router.SendToRoute(ctxt, &routerrpc.SendToRouteRequest{
 			PaymentHash: invoiceRsp.RHash,
-			Route: route,
+			Route:       route,
 		})
 		if err != nil {
 			fmt.Printf("router.SendToRoute failed: %v\n", err)
@@ -395,16 +395,16 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 				panic(fmt.Sprintf("GetNodeInfo failed[1]:", err))
 			}
 			alias := nodeInfo.Node.Alias
-			
+
 			fmt.Printf("%30s: %s\n", alias, sendRsp.Failure.Code.String())
 			fmt.Println()
-			
+
 			// Figure out which edge to ignore
 			for ndx, hop := range route.Hops {
 				if hop.PubKey == pubKey {
 					// We want to drop the next hop. Is this the next
 					// to last hop.?
-					if ndx == len(route.Hops) - 2 {
+					if ndx == len(route.Hops)-2 {
 						// Can't skip the last hop ... this one's done.
 						fmt.Println("can't ignore last hop")
 						goto FailedToRoute
@@ -412,8 +412,8 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 					chanId := route.Hops[ndx+1].ChanId
 					nextChanInfo, err :=
 						client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
-						ChanId: chanId,
-					})
+							ChanId: chanId,
+						})
 					if err != nil {
 						panic(fmt.Sprintf("hop GetChanInfo failed:", err))
 					}
@@ -425,7 +425,7 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 					if ignoreBadEdges {
 						// Append this edge to the ignoredEdges and re-route.
 						badEdge := &lnrpc.EdgeLocator{
-							ChannelId: chanId,
+							ChannelId:        chanId,
 							DirectionReverse: reverse,
 						}
 						fmt.Printf("ignoring %v\n", badEdge)

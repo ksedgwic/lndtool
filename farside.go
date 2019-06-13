@@ -3,12 +3,12 @@
 package main
 
 import (
-	"sort"
-    "context"
-    "fmt"
+	"context"
+	"fmt"
 	"math"
-	
-    "github.com/lightningnetwork/lnd/lnrpc"
+	"sort"
+
+	"github.com/lightningnetwork/lnd/lnrpc"
 )
 
 type Edge struct {
@@ -21,18 +21,18 @@ func NewEdge(ee *lnrpc.ChannelEdge) *Edge {
 
 type Node struct {
 	lnrpc.LightningNode
-	Edges []*Edge
-	Policy []*lnrpc.RoutingPolicy
-	Peers []*Node
-	NumHops	int
+	Edges         []*Edge
+	Policy        []*lnrpc.RoutingPolicy
+	Peers         []*Node
+	NumHops       int
 	CumulativeFee float64
 }
 
 func NewNode(nn *lnrpc.LightningNode) *Node {
 	return &Node{
 		LightningNode: *nn,
-		Edges: []*Edge{},
-		NumHops: -1,
+		Edges:         []*Edge{},
+		NumHops:       -1,
 		CumulativeFee: 0,
 	}
 }
@@ -62,7 +62,7 @@ func (node *Node) Select() bool {
 	if node.NumHops == -1 {
 		return false
 	}
-	
+
 	return node.NumHops > 2 &&
 		node.CumulativeFee > 200 &&
 		node.Capacity() > 10e6 &&
@@ -70,7 +70,8 @@ func (node *Node) Select() bool {
 }
 
 type ByUtility []*Node
-func (nn ByUtility) Len() int { return len(nn) }
+
+func (nn ByUtility) Len() int        { return len(nn) }
 func (nn ByUtility) Swap(ii, jj int) { nn[ii], nn[jj] = nn[jj], nn[ii] }
 func (nn ByUtility) Less(ii, jj int) bool {
 	if nn[ii].NumHops < nn[jj].NumHops {
@@ -94,7 +95,7 @@ func (nn ByUtility) Less(ii, jj int) bool {
 	}
 }
 
-const xfersize = 1000 * 1000	// 1e6 sat = $80
+const xfersize = 1000 * 1000 // 1e6 sat = $80
 
 func (node *Node) Propagate(hops int, fee float64) {
 	if node.NumHops == -1 {
@@ -135,17 +136,17 @@ func (node *Node) Propagate(hops int, fee float64) {
 
 func farSide(cfg *config, client lnrpc.LightningClient, ctx context.Context) {
 	rsp, err := client.DescribeGraph(ctx, &lnrpc.ChannelGraphRequest{})
-    if err != nil {
-        fmt.Println("Cannot describe graph from node:", err)
-        return
-    }
+	if err != nil {
+		fmt.Println("Cannot describe graph from node:", err)
+		return
+	}
 
 	nodes := map[string]*Node{}
 	for _, nn := range rsp.Nodes {
-	 	nodes[nn.PubKey] = NewNode(nn)
+		nodes[nn.PubKey] = NewNode(nn)
 	}
 
- 	edges := map[uint64]*Edge{}
+	edges := map[uint64]*Edge{}
 	for _, ee := range rsp.Edges {
 		edge := NewEdge(ee)
 		edges[ee.ChannelId] = edge

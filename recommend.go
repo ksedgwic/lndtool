@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"sort"
 	"time"
-	
-    "github.com/lightningnetwork/lnd/lnrpc"
-    "github.com/lightningnetwork/lnd/lnrpc/routerrpc"
+
+	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 )
 
 type PotentialLoop struct {
@@ -18,7 +18,7 @@ type PotentialLoop struct {
 	SrcNode string
 	DstChan uint64
 	DstNode string
-	Amount int64
+	Amount  int64
 }
 
 func NewPotentialLoop(
@@ -33,7 +33,7 @@ func NewPotentialLoop(
 		SrcNode: srcNode,
 		DstChan: dstChan,
 		DstNode: dstNode,
-		Amount: amount,
+		Amount:  amount,
 	}
 }
 
@@ -51,16 +51,16 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 	for _, node := range cfg.Recommend.DstChanTarget {
 		dstlist[node] = true
 	}
-	
+
 	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
-		ActiveOnly: true,
+		ActiveOnly:   true,
 		InactiveOnly: false,
-		PublicOnly: true,
-		PrivateOnly: false,
+		PublicOnly:   true,
+		PrivateOnly:  false,
 	})
-    if err != nil {
+	if err != nil {
 		panic(fmt.Sprint("ListChannels failed:", err))
-    }
+	}
 
 	// Consider all combinations of channels
 	loops := []*PotentialLoop{}
@@ -75,19 +75,19 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 		if len(srclist) > 0 && !srclist[srcChan.ChanId] {
 			continue
 		}
-		
+
 		for dstNdx, dstChan := range rsp.Channels {
-		
+
 			// Is this node blacklisted?
 			if blacklist[dstChan.RemotePubkey] {
 				continue
 			}
-			
+
 			// Is there a dest list?  Is this channel in it?
 			if len(dstlist) > 0 && !dstlist[dstChan.ChanId] {
 				continue
 			}
-			
+
 			// Same channel can't be both src and dst:
 			if srcNdx == dstNdx {
 				continue
@@ -101,15 +101,15 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 			// Make sure the source imbalance is positive:
 			srcImbalance :=
 				srcChan.LocalBalance -
-				((srcChan.LocalBalance + srcChan.RemoteBalance) / 2)
+					((srcChan.LocalBalance + srcChan.RemoteBalance) / 2)
 			if srcImbalance < cfg.Recommend.MinImbalance {
 				continue
 			}
-			
+
 			// Make sure the destination imbalance is negative:
 			dstImbalance :=
 				dstChan.LocalBalance -
-				((dstChan.LocalBalance + dstChan.RemoteBalance) / 2)
+					((dstChan.LocalBalance + dstChan.RemoteBalance) / 2)
 			if dstImbalance > -cfg.Recommend.MinImbalance {
 				continue
 			}
@@ -141,7 +141,7 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 		if amount > cfg.Recommend.TransferAmount {
 			amount = cfg.Recommend.TransferAmount
 		}
-			
+
 		// Consider recent history
 		tstamp := time.Now().Unix() - int64(cfg.Recommend.RetryInhibit.Seconds())
 		if !recentlyFailed(db, loop.SrcChan, loop.DstChan, tstamp, amount, cfg.Rebalance.FeeLimitRate) {

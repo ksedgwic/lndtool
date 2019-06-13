@@ -4,28 +4,28 @@ package main
 
 import (
 	"database/sql"
-    "fmt"
+	"fmt"
 
-    _ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type LoopAttemptOutcome int
 
 const (
-	LoopAttemptSuccess		LoopAttemptOutcome = 0
-	LoopAttemptNoRoutes		LoopAttemptOutcome = 10
-	LoopAttemptFailure		LoopAttemptOutcome = 100
+	LoopAttemptSuccess  LoopAttemptOutcome = 0
+	LoopAttemptNoRoutes LoopAttemptOutcome = 10
+	LoopAttemptFailure  LoopAttemptOutcome = 100
 )
 
 type LoopAttempt struct {
-	Tstamp int64
-	SrcChan uint64
-	SrcNode string
-	DstChan uint64
-	DstNode string
-	Amount int64
+	Tstamp       int64
+	SrcChan      uint64
+	SrcNode      string
+	DstChan      uint64
+	DstNode      string
+	Amount       int64
 	FeeLimitRate float64
-	Outcome LoopAttemptOutcome
+	Outcome      LoopAttemptOutcome
 }
 
 func NewLoopAttempt(
@@ -39,19 +39,19 @@ func NewLoopAttempt(
 	outcome LoopAttemptOutcome,
 ) *LoopAttempt {
 	return &LoopAttempt{
-		Tstamp: tstamp,
-		SrcChan: srcChan,
-		SrcNode: srcNode,
-		DstChan: dstChan,
-		DstNode: dstNode,
-		Amount: amount,
+		Tstamp:       tstamp,
+		SrcChan:      srcChan,
+		SrcNode:      srcNode,
+		DstChan:      dstChan,
+		DstNode:      dstNode,
+		Amount:       amount,
 		FeeLimitRate: feeLimitRate,
-		Outcome: outcome,
+		Outcome:      outcome,
 	}
 }
 
-func openDatabase() (*sql.DB) {
-    db, err := sql.Open("sqlite3", "./lndtool.db")
+func openDatabase() *sql.DB {
+	db, err := sql.Open("sqlite3", "./lndtool.db")
 	if err != nil {
 		panic(fmt.Sprintf("sql.Open failed: %v", err))
 	}
@@ -71,22 +71,22 @@ func createDatabase(cfg *config, db *sql.DB) {
 	        fee_limit_rate FLOAT,
 	        outcome INTEGER
         )
-    `,`
+    `, `
         CREATE INDEX IF NOT EXISTS loop_attempt_tstamp_ndx
             ON loop_attempt(tstamp)
-    `,`
+    `, `
         CREATE INDEX IF NOT EXISTS loop_attempt_src_chan_ndx
             ON loop_attempt(src_chan)
-    `,`
+    `, `
         CREATE INDEX IF NOT EXISTS loop_attempt_src_node_ndx
             ON loop_attempt(src_node)
-    `,`
+    `, `
         CREATE INDEX IF NOT EXISTS loop_attempt_dst_chan_ndx
             ON loop_attempt(dst_chan)
-    `,`
+    `, `
         CREATE INDEX IF NOT EXISTS loop_attempt_dst_node_ndx
             ON loop_attempt(dst_node)
-    `,}
+    `}
 
 	for _, cmd := range cmds {
 		stmt, err := db.Prepare(cmd)
@@ -112,11 +112,11 @@ func insertLoopAttempt(db *sql.DB, attempt *LoopAttempt) {
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
-    stmt, err := db.Prepare(cmd)
+	stmt, err := db.Prepare(cmd)
 	if err != nil {
 		panic(fmt.Sprintf("db.Prepare \"%s\" failed: %v", cmd, err))
 	}
-    _, err = stmt.Exec(
+	_, err = stmt.Exec(
 		attempt.Tstamp,
 		attempt.SrcChan, attempt.SrcNode,
 		attempt.DstChan, attempt.DstNode,
@@ -129,10 +129,9 @@ func insertLoopAttempt(db *sql.DB, attempt *LoopAttempt) {
 	}
 }
 
-
-// 	
+//
 // 	os.Exit(0)
-// 	
+//
 //     stmt, _ = sql.Prepare(`
 //          INSERT INTO people (firstname, lastname) VALUES (?, ?)
 //     `)
@@ -162,7 +161,7 @@ func recentlyFailed(db *sql.DB,
           AND fee_limit_rate >= ?
           AND outcome != 0
     `
-	row := db.QueryRow(query, srcChan, dstChan, tstamp, amount, feeLimitRate);
+	row := db.QueryRow(query, srcChan, dstChan, tstamp, amount, feeLimitRate)
 	var count int
 	switch err := row.Scan(&count); err {
 	case sql.ErrNoRows:
@@ -194,7 +193,7 @@ func chanStats(db *sql.DB, theChan uint64) *ChannelStats {
 func doChanStats(db *sql.DB, theChan uint64, isRcv bool, retval *ChannelStats) {
 
 	query := `SELECT amount, outcome FROM loop_attempt `
-	
+
 	if isRcv {
 		query += ` WHERE dst_chan = ?`
 	} else {
@@ -206,7 +205,7 @@ func doChanStats(db *sql.DB, theChan uint64, isRcv bool, retval *ChannelStats) {
 		panic(fmt.Sprintf("db.Query \"%s\" failed: %v", query, err))
 	}
 	defer rows.Close()
-	
+
 	for rows.Next() {
 		var amount int
 		var outcome int
@@ -214,7 +213,7 @@ func doChanStats(db *sql.DB, theChan uint64, isRcv bool, retval *ChannelStats) {
 		if err != nil {
 			panic(err)
 		}
-		
+
 		if isRcv {
 			retval.RcvCnt += 1
 			if outcome != 0 {
