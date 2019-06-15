@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -134,7 +133,7 @@ func (node *Node) Propagate(hops int, fee float64) {
 	}
 }
 
-func farSide(cfg *config, client lnrpc.LightningClient, ctx context.Context) {
+func farSide() {
 	rsp, err := client.DescribeGraph(ctx, &lnrpc.ChannelGraphRequest{})
 	if err != nil {
 		fmt.Println("Cannot describe graph from node:", err)

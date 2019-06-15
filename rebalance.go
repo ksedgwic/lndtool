@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"strconv"
@@ -17,9 +16,9 @@ import (
 
 var ignoreBadEdges = true // Ignore bad edges on subsequent QueryRoutes
 
-func hopPolicy(cfg *config, client lnrpc.LightningClient, ctx context.Context,
-	chanId uint64, dstNode string) *lnrpc.RoutingPolicy {
-	chanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{ChanId: chanId})
+func hopPolicy(chanId uint64, dstNode string) *lnrpc.RoutingPolicy {
+	chanInfo, err :=
+		client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{ChanId: chanId})
 	if err != nil {
 		panic(fmt.Sprintf("last GetChanInfo failed:", err))
 	}
@@ -30,8 +29,7 @@ func hopPolicy(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	}
 }
 
-func dumpRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
-	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
+func dumpRoute(info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 
 	fmt.Println("ChanId               Capacity     Amt    AmtMsat  Fee  FeeMsat Dlt PubKey                                                                   FB   FR  Dlt Alias")
 
@@ -50,7 +48,7 @@ func dumpRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	policies := []*lnrpc.RoutingPolicy{}
 	for _, hop := range route.Hops {
 		policies = append(policies,
-			hopPolicy(cfg, client, ctx, hop.ChanId, hop.PubKey))
+			hopPolicy(hop.ChanId, hop.PubKey))
 	}
 
 	for ndx, hop := range route.Hops {
@@ -101,9 +99,7 @@ func dumpRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	fmt.Println()
 }
 
-func repriceRoute(
-	cfg *config, client lnrpc.LightningClient, ctx context.Context,
-	info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
+func repriceRoute(info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
 	ll := len(route.Hops)
 
 	sumDelta := cfg.Rebalance.FinalCLTVDelta
@@ -116,7 +112,7 @@ func repriceRoute(
 
 	for ndx := ll - 1; ndx >= 0; ndx-- {
 		hop := route.Hops[ndx]
-		sndPolicy := hopPolicy(cfg, client, ctx, hop.ChanId, hop.PubKey)
+		sndPolicy := hopPolicy(hop.ChanId, hop.PubKey)
 
 		hop.Expiry = info.BlockHeight + sumDelta
 
@@ -146,8 +142,7 @@ func repriceRoute(
 	route.TotalAmt = ((amt * 1000) + sumFeeMsat) / 1000
 }
 
-func checkRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
-	info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
+func checkRoute(info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	ll := len(route.Hops)
 
 	sumDelta := cfg.Rebalance.FinalCLTVDelta
@@ -158,7 +153,7 @@ func checkRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 
 	for ndx := ll - 1; ndx >= 0; ndx-- {
 		hop := route.Hops[ndx]
-		sndPolicy := hopPolicy(cfg, client, ctx, hop.ChanId, hop.PubKey)
+		sndPolicy := hopPolicy(hop.ChanId, hop.PubKey)
 
 		if hop.Expiry-info.BlockHeight != sumDelta {
 			panic(fmt.Sprintf("bad expiry on hop %d", ndx))
@@ -188,7 +183,7 @@ func checkRoute(cfg *config, client lnrpc.LightningClient, ctx context.Context,
 	}
 }
 
-func rebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, args []string) {
+func rebalance(args []string) {
 	amti, err := strconv.Atoi(args[0])
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse amount:", err))
@@ -207,10 +202,10 @@ func rebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 	}
 	dstChanId := uint64(dstChanIdI)
 
-	doRebalance(cfg, client, router, ctx, db, amt, srcChanId, dstChanId)
+	doRebalance(amt, srcChanId, dstChanId)
 }
 
-func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, amt int64, srcChanId, dstChanId uint64) bool {
+func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 
 	// What is our own PubKey?
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
@@ -330,11 +325,11 @@ func doRebalance(cfg *config, client lnrpc.LightningClient, router routerrpc.Rou
 		}
 		route.Hops = append(route.Hops, hopN)
 
-		repriceRoute(cfg, client, ctx, info, route, amt)
+		repriceRoute(info, route, amt)
 
-		dumpRoute(cfg, client, ctx, info, route)
+		dumpRoute(info, route)
 
-		checkRoute(cfg, client, ctx, info, route)
+		checkRoute(info, route)
 
 		if (route.TotalFeesMsat / 1000) > feeLimitFixed {
 			fmt.Println("route exceeds fee limit")

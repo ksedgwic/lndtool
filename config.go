@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/davecgh/go-spew/spew"
+	// "github.com/davecgh/go-spew/spew"
 	flags "github.com/jessevdk/go-flags"
 )
 
@@ -75,35 +77,42 @@ type config struct {
 	Recommend *recommendConfig `group:"Recommend" namespace:"recommend"`
 }
 
-func loadConfig() (*config, []string, error) {
-	defaultCfg := config{
-		LndDir:       defaultLndDir,
-		LndToolDir:   defaultLndToolDir,
-		ConfigFile:   defaultConfigFile,
-		TLSCertPath:  defaultTLSCertPath,
-		MacaroonPath: defaultMacaroonPath,
-		RPCServer:    defaultRPCServer,
-		Channels: &channelsConfig{
-			StatsWindow: defaultStatsWindow,
-		},
-		Rebalance: &rebalanceConfig{
-			FinalCLTVDelta: defaultFinalCLTVDelta,
-			FeeLimitRate:   defaultFeeLimitRate,
-		},
-		Recommend: &recommendConfig{
-			SrcChanTarget:     []uint64{},
-			DstChanTarget:     []uint64{},
-			PeerNodeBlacklist: []string{},
-			MinImbalance:      defaultMinImbalance,
-			TransferAmount:    defaultTransferAmount,
-			RetryInhibit:      defaultRetryInhibit,
-		},
-	}
+var defaultCfg = config{
+	LndDir:       defaultLndDir,
+	LndToolDir:   defaultLndToolDir,
+	ConfigFile:   defaultConfigFile,
+	TLSCertPath:  defaultTLSCertPath,
+	MacaroonPath: defaultMacaroonPath,
+	RPCServer:    defaultRPCServer,
+	Channels: &channelsConfig{
+		StatsWindow: defaultStatsWindow,
+	},
+	Rebalance: &rebalanceConfig{
+		FinalCLTVDelta: defaultFinalCLTVDelta,
+		FeeLimitRate:   defaultFeeLimitRate,
+	},
+	Recommend: &recommendConfig{
+		SrcChanTarget:     []uint64{},
+		DstChanTarget:     []uint64{},
+		PeerNodeBlacklist: []string{},
+		MinImbalance:      defaultMinImbalance,
+		TransferAmount:    defaultTransferAmount,
+		RetryInhibit:      defaultRetryInhibit,
+	},
+}
 
+func nilHandler(flags.Commander, []string) error {
+	return nil
+}
+
+func loadConfig() (*config, []string, error) {
 	// Pre-parse the command line options to pick up an alternative
 	// config file.
 	preCfg := defaultCfg
-	if _, err := flags.Parse(&preCfg); err != nil {
+	preParser := flags.NewParser(&preCfg, flags.Default)
+	addCommands(preParser)
+	preParser.CommandHandler = nilHandler // disable execution on this pass
+	if _, err := preParser.Parse(); err != nil {
 		return nil, nil, err
 	}
 
@@ -123,8 +132,8 @@ func loadConfig() (*config, []string, error) {
 
 	// Next, load any additional configuration options from the file.
 	var configFileError error
-	cfg := preCfg
-	if err := flags.IniParse(configFilePath, &cfg); err != nil {
+	postCfg := preCfg
+	if err := flags.IniParse(configFilePath, &postCfg); err != nil {
 		// If it's a parsing related error, then we'll return
 		// immediately, otherwise we can proceed as possibly the config
 		// file doesn't exist which is OK.
@@ -137,7 +146,9 @@ func loadConfig() (*config, []string, error) {
 
 	// Finally, parse the remaining command line options again to ensure
 	// they take precedence.
-	args, err := flags.Parse(&cfg)
+	parser := flags.NewParser(&postCfg, flags.Default)
+	addCommands(parser)
+	args, err := parser.Parse()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -145,8 +156,8 @@ func loadConfig() (*config, []string, error) {
 	// As soon as we're done parsing configuration options, ensure all paths
 	// to directories and files are cleaned and expanded before attempting
 	// to use them later on.
-	cfg.TLSCertPath = cleanAndExpandPath(cfg.TLSCertPath)
-	cfg.MacaroonPath = cleanAndExpandPath(cfg.MacaroonPath)
+	postCfg.TLSCertPath = cleanAndExpandPath(postCfg.TLSCertPath)
+	postCfg.MacaroonPath = cleanAndExpandPath(postCfg.MacaroonPath)
 
 	// Warn about missing config file only after all other configuration is
 	// done.  This prevents the warning on help messages and invalid
@@ -156,7 +167,7 @@ func loadConfig() (*config, []string, error) {
 		fmt.Printf("%v\n", configFileError)
 	}
 
-	return &cfg, args, nil
+	return &postCfg, args, nil
 }
 
 // cleanAndExpandPath expands environment variables and leading ~ in the
@@ -183,4 +194,141 @@ func cleanAndExpandPath(path string) string {
 	// NOTE: The os.ExpandEnv doesn't work with Windows-style %VARIABLE%,
 	// but the variables can still be expanded via POSIX-style $VARIABLE.
 	return filepath.Clean(os.ExpandEnv(path))
+}
+
+type LNDToolCommand interface {
+	RunCommand() error
+}
+
+var command LNDToolCommand = nil
+var arguments []string = nil
+
+func addCommands(parser *flags.Parser) {
+	parser.AddCommand("dumpconfig",
+		"Dumps the configuration to stdout",
+		"The dumpconfig command prints the config to stdout",
+		&dumpConfigCmd)
+	parser.AddCommand("channels",
+		"Lists channels in tabular form",
+		"Lists channels in tabular form",
+		&listChannelsCmd)
+	parser.AddCommand("farside",
+		"Finds nodes on the far side of the connected set",
+		"Finds nodes on the far side of the connected set",
+		&farSideCmd)
+	parser.AddCommand("rebalance",
+		"Balance a pair of channels with a loop transaction",
+		"Balance a pair of channels with a loop transaction",
+		&rebalanceCmd)
+	parser.AddCommand("recommend",
+		"Recommend a pair of channels to rebalance",
+		"Recommend a pair of channels to rebalance",
+		&recommendCmd)
+	parser.AddCommand("autobalance",
+		"Loop balancing channels",
+		"Loop balancing channels",
+		&autoBalanceCmd)
+}
+
+type DumpConfigCmd struct {
+}
+
+var dumpConfigCmd DumpConfigCmd
+
+func (cmd *DumpConfigCmd) Execute(args []string) error {
+	command = cmd
+	arguments = args
+	return nil
+}
+
+func (cmd *DumpConfigCmd) RunCommand() error {
+	spew.Dump(cfg)
+	return nil
+}
+
+type ListChannelsCmd struct {
+}
+
+var listChannelsCmd ListChannelsCmd
+
+func (cmd *ListChannelsCmd) Execute(args []string) error {
+	command = cmd
+	arguments = args
+	return nil
+}
+
+func (cmd *ListChannelsCmd) RunCommand() error {
+	listChannels()
+	return nil
+}
+
+type FarSideCmd struct {
+}
+
+var farSideCmd FarSideCmd
+
+func (cmd *FarSideCmd) Execute(args []string) error {
+	command = cmd
+	arguments = args
+	return nil
+}
+
+func (cmd *FarSideCmd) RunCommand() error {
+	farSide()
+	return nil
+}
+
+type RebalanceCmd struct {
+	Amount      int64  `short:"a" long:"amount" description:"Amount to transfer" required:"true"`
+	Source      uint64 `short:"s" long:"source" description:"Source channel" required:"true"`
+	Destination uint64 `short:"d" long:"destination" description:"Destination channel" required:"true"`
+}
+
+var rebalanceCmd RebalanceCmd
+
+func (cmd *RebalanceCmd) Execute(args []string) error {
+	command = cmd
+	arguments = args
+	return nil
+}
+
+func (cmd *RebalanceCmd) RunCommand() error {
+	doRebalance(cmd.Amount, cmd.Source, cmd.Destination)
+	return nil
+}
+
+type RecommendCmd struct {
+}
+
+var recommendCmd RecommendCmd
+
+func (cmd *RecommendCmd) Execute(args []string) error {
+	command = cmd
+	arguments = args
+	return nil
+}
+
+func (cmd *RecommendCmd) RunCommand() error {
+	recommend()
+	return nil
+}
+
+type AutoBalanceCmd struct {
+}
+
+var autoBalanceCmd AutoBalanceCmd
+
+func (cmd *AutoBalanceCmd) Execute(args []string) error {
+	command = cmd
+	arguments = args
+	return nil
+}
+
+func (cmd *AutoBalanceCmd) RunCommand() error {
+	for {
+		if !recommend() {
+			break
+		}
+	}
+	return nil
 }

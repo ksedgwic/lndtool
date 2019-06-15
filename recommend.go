@@ -3,14 +3,11 @@
 package main
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/lightningnetwork/lnd/lnrpc"
-	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 )
 
 type PotentialLoop struct {
@@ -37,7 +34,7 @@ func NewPotentialLoop(
 	}
 }
 
-func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.RouterClient, ctx context.Context, db *sql.DB, args []string) bool {
+func recommend() bool {
 
 	var blacklist = map[string]bool{}
 	for _, node := range cfg.Recommend.PeerNodeBlacklist {
@@ -145,8 +142,7 @@ func recommend(cfg *config, client lnrpc.LightningClient, router routerrpc.Route
 		// Consider recent history
 		tstamp := time.Now().Unix() - int64(cfg.Recommend.RetryInhibit.Seconds())
 		if !recentlyFailed(db, loop.SrcChan, loop.DstChan, tstamp, amount, cfg.Rebalance.FeeLimitRate) {
-			doRebalance(cfg, client, router, ctx, db, amount,
-				loop.SrcChan, loop.DstChan)
+			doRebalance(amount, loop.SrcChan, loop.DstChan)
 			return true
 		}
 	}

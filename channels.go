@@ -3,8 +3,6 @@
 package main
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
 	"math"
 	"sort"
@@ -27,7 +25,7 @@ type FwdStatsElem struct {
 
 type FwdStats map[uint64]*FwdStatsElem
 
-func getFwdStats(cfg *config, client lnrpc.LightningClient, ctx context.Context) *FwdStats {
+func getFwdStats() *FwdStats {
 	retval := FwdStats{}
 
 	hist, err := client.ForwardingHistory(ctx, &lnrpc.ForwardingHistoryRequest{
@@ -80,9 +78,9 @@ func fmtAmountSci(amt float64) string {
 	}
 }
 
-func listChannels(cfg *config, client lnrpc.LightningClient, ctx context.Context, db *sql.DB) {
+func listChannels() {
 
-	fwdStats := getFwdStats(cfg, client, ctx)
+	fwdStats := getFwdStats()
 
 	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
 	if err != nil {

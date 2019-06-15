@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -17,13 +18,24 @@ import (
 	"gopkg.in/macaroon.v2"
 )
 
+// TODO - can this be moved to recommend or rebalance?
 // Keep accumulating bad edges.
 var edgeLimit map[*lnrpc.EdgeLocator]int64
+
+var (
+	cfg    *config
+	client lnrpc.LightningClient
+	router routerrpc.RouterClient
+	ctx    context.Context
+	db     *sql.DB
+)
 
 func main() {
 	edgeLimit = map[*lnrpc.EdgeLocator]int64{}
 
-	cfg, args, err := loadConfig()
+	var args []string
+	var err error
+	cfg, args, err = loadConfig()
 	if err != nil {
 		os.Exit(0)
 	}
@@ -59,14 +71,14 @@ func main() {
 		fmt.Println("cannot dial to lnd", err)
 		return
 	}
-	client := lnrpc.NewLightningClient(conn)
-	router := routerrpc.NewRouterClient(conn)
-	ctx := context.Background()
+	client = lnrpc.NewLightningClient(conn)
+	router = routerrpc.NewRouterClient(conn)
+	ctx = context.Background()
 
-	db := openDatabase()
+	db = openDatabase()
 
-	if len(args) == 0 {
-		// TODO - generate usage message here
+	if command != nil {
+		command.RunCommand()
 		os.Exit(0)
 	}
 
@@ -78,24 +90,24 @@ func main() {
 		}
 	case "channels":
 		{
-			listChannels(cfg, client, ctx, db)
+			listChannels()
 		}
 	case "farside":
 		{
-			farSide(cfg, client, ctx)
+			farSide()
 		}
 	case "rebalance":
 		{
-			rebalance(cfg, client, router, ctx, db, args[1:])
+			rebalance(args[1:])
 		}
 	case "recommend":
 		{
-			recommend(cfg, client, router, ctx, db, args[1:])
+			recommend()
 		}
 	case "autobalance":
 		{
 			for {
-				if !recommend(cfg, client, router, ctx, db, args[1:]) {
+				if !recommend() {
 					break
 				}
 			}
