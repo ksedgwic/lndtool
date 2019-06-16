@@ -246,7 +246,7 @@ func (cmd *DumpConfigCmd) Execute(args []string) error {
 }
 
 func (cmd *DumpConfigCmd) RunCommand() error {
-	spew.Dump(cfg)
+	spew.Dump(gCfg)
 	return nil
 }
 

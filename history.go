@@ -50,15 +50,15 @@ func NewLoopAttempt(
 	}
 }
 
-func openDatabase() *sql.DB {
-	db, err := sql.Open("sqlite3", cfg.DBFile)
+func openDatabase() {
+	var err error
+	gDB, err = sql.Open("sqlite3", gCfg.DBFile)
 	if err != nil {
 		panic(fmt.Sprintf("sql.Open failed: %v", err))
 	}
-	return db
 }
 
-func createDatabase(db *sql.DB) {
+func createDatabase() {
 	cmds := []string{`
         CREATE TABLE IF NOT EXISTS loop_attempt (
 	        id INTEGER PRIMARY KEY,
@@ -89,9 +89,9 @@ func createDatabase(db *sql.DB) {
     `}
 
 	for _, cmd := range cmds {
-		stmt, err := db.Prepare(cmd)
+		stmt, err := gDB.Prepare(cmd)
 		if err != nil {
-			panic(fmt.Sprintf("db.Prepare \"%s\" failed: %v", cmd, err))
+			panic(fmt.Sprintf("gDB.Prepare \"%s\" failed: %v", cmd, err))
 		}
 		_, err = stmt.Exec()
 		if err != nil {
@@ -100,7 +100,7 @@ func createDatabase(db *sql.DB) {
 	}
 }
 
-func insertLoopAttempt(db *sql.DB, attempt *LoopAttempt) {
+func insertLoopAttempt(attempt *LoopAttempt) {
 	cmd := `
         INSERT INTO loop_attempt (
             tstamp,
@@ -112,9 +112,9 @@ func insertLoopAttempt(db *sql.DB, attempt *LoopAttempt) {
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
-	stmt, err := db.Prepare(cmd)
+	stmt, err := gDB.Prepare(cmd)
 	if err != nil {
-		panic(fmt.Sprintf("db.Prepare \"%s\" failed: %v", cmd, err))
+		panic(fmt.Sprintf("gDB.Prepare \"%s\" failed: %v", cmd, err))
 	}
 	_, err = stmt.Exec(
 		attempt.Tstamp,
@@ -146,8 +146,7 @@ func insertLoopAttempt(db *sql.DB, attempt *LoopAttempt) {
 //     }
 // }
 
-func recentlyFailed(db *sql.DB,
-	srcChan, dstChan uint64, tstamp int64, amount int64, feeLimitRate float64) bool {
+func recentlyFailed(srcChan, dstChan uint64, tstamp int64, amount int64, feeLimitRate float64) bool {
 	// Has this loop already failed recently?
 	// Don't consider history prior to the horizon.
 	// Don't consider higher amounts than this one.
@@ -161,7 +160,7 @@ func recentlyFailed(db *sql.DB,
           AND fee_limit_rate >= ?
           AND outcome != 0
     `
-	row := db.QueryRow(query, srcChan, dstChan, tstamp, amount, feeLimitRate)
+	row := gDB.QueryRow(query, srcChan, dstChan, tstamp, amount, feeLimitRate)
 	var count int
 	switch err := row.Scan(&count); err {
 	case sql.ErrNoRows:
@@ -183,14 +182,14 @@ type ChannelStats struct {
 	SndSat int64
 }
 
-func chanStats(db *sql.DB, theChan uint64) *ChannelStats {
+func chanStats(theChan uint64) *ChannelStats {
 	stats := ChannelStats{}
-	doChanStats(db, theChan, true, &stats)
-	doChanStats(db, theChan, false, &stats)
+	doChanStats(theChan, true, &stats)
+	doChanStats(theChan, false, &stats)
 	return &stats
 }
 
-func doChanStats(db *sql.DB, theChan uint64, isRcv bool, retval *ChannelStats) {
+func doChanStats(theChan uint64, isRcv bool, retval *ChannelStats) {
 
 	query := `SELECT amount, outcome FROM loop_attempt `
 
@@ -200,9 +199,9 @@ func doChanStats(db *sql.DB, theChan uint64, isRcv bool, retval *ChannelStats) {
 		query += ` WHERE src_chan = ?`
 	}
 
-	rows, err := db.Query(query, theChan)
+	rows, err := gDB.Query(query, theChan)
 	if err != nil {
-		panic(fmt.Sprintf("db.Query \"%s\" failed: %v", query, err))
+		panic(fmt.Sprintf("gDB.Query \"%s\" failed: %v", query, err))
 	}
 	defer rows.Close()
 

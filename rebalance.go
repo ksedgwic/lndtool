@@ -18,7 +18,7 @@ var ignoreBadEdges = true // Ignore bad edges on subsequent QueryRoutes
 
 func hopPolicy(chanId uint64, dstNode string) *lnrpc.RoutingPolicy {
 	chanInfo, err :=
-		client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{ChanId: chanId})
+		gClient.GetChanInfo(gCtx, &lnrpc.ChanInfoRequest{ChanId: chanId})
 	if err != nil {
 		panic(fmt.Sprintf("last GetChanInfo failed:", err))
 	}
@@ -52,7 +52,7 @@ func dumpRoute(info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	}
 
 	for ndx, hop := range route.Hops {
-		nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+		nodeInfo, err := gClient.GetNodeInfo(gCtx, &lnrpc.NodeInfoRequest{
 			PubKey: hop.PubKey,
 		})
 		if err != nil {
@@ -102,7 +102,7 @@ func dumpRoute(info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 func repriceRoute(info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
 	ll := len(route.Hops)
 
-	sumDelta := cfg.Rebalance.FinalCLTVDelta
+	sumDelta := gCfg.Rebalance.FinalCLTVDelta
 	lastDelta := uint32(0)
 
 	sumFeeMsat := int64(0)
@@ -145,7 +145,7 @@ func repriceRoute(info *lnrpc.GetInfoResponse, route *lnrpc.Route, amt int64) {
 func checkRoute(info *lnrpc.GetInfoResponse, route *lnrpc.Route) {
 	ll := len(route.Hops)
 
-	sumDelta := cfg.Rebalance.FinalCLTVDelta
+	sumDelta := gCfg.Rebalance.FinalCLTVDelta
 	lastDelta := uint32(0)
 
 	sumFeeMsat := int64(0)
@@ -208,14 +208,14 @@ func rebalance(args []string) {
 func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 
 	// What is our own PubKey?
-	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
+	info, err := gClient.GetInfo(gCtx, &lnrpc.GetInfoRequest{})
 	if err != nil {
 		panic(fmt.Sprintf("GetInfo failed[1]:", err))
 	}
 	ourPubKey := info.IdentityPubkey
 
 	// What is the src pub key?
-	srcChanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
+	srcChanInfo, err := gClient.GetChanInfo(gCtx, &lnrpc.ChanInfoRequest{
 		ChanId: srcChanId,
 	})
 	if err != nil {
@@ -229,7 +229,7 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 	}
 
 	// What is the dst pub key?
-	dstChanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
+	dstChanInfo, err := gClient.GetChanInfo(gCtx, &lnrpc.ChanInfoRequest{
 		ChanId: dstChanId,
 	})
 	if err != nil {
@@ -242,9 +242,9 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 		dstPubKey = dstChanInfo.Node1Pub
 	}
 
-	feeLimitPercent := cfg.Rebalance.FeeLimitRate * 100
+	feeLimitPercent := gCfg.Rebalance.FeeLimitRate * 100
 	feeLimitFixed := int64(float64(amt) * (feeLimitPercent / 100))
-	fmt.Printf("limit fee rate to %f, %d sat\n", cfg.Rebalance.FeeLimitRate, feeLimitFixed)
+	fmt.Printf("limit fee rate to %f, %d sat\n", gCfg.Rebalance.FeeLimitRate, feeLimitFixed)
 
 	// Defer creating invoice until we get far enough to need one.
 	var invoiceRsp *lnrpc.AddInvoiceResponse = nil
@@ -268,7 +268,7 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 
 		fmt.Printf("querying possible routes, fee limit %d sat, ignoring %d edges\n",
 			feeLimitFixed, len(badEdges))
-		rsp, err := client.QueryRoutes(ctx, &lnrpc.QueryRoutesRequest{
+		rsp, err := gClient.QueryRoutes(gCtx, &lnrpc.QueryRoutesRequest{
 			PubKey: dstPubKey,
 			Amt:    amt,
 			FeeLimit: &lnrpc.FeeLimit{
@@ -277,18 +277,18 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 				},
 			},
 			SourcePubKey:   srcPubKey,
-			FinalCltvDelta: int32(cfg.Rebalance.FinalCLTVDelta),
+			FinalCltvDelta: int32(gCfg.Rebalance.FinalCLTVDelta),
 			IgnoredEdges:   badEdges,
 			IgnoredNodes:   [][]byte{ourNode},
 		})
 
 		if err != nil {
 			fmt.Println("no routes found at this fee limit")
-			insertLoopAttempt(db, NewLoopAttempt(
+			insertLoopAttempt(NewLoopAttempt(
 				time.Now().Unix(),
 				srcChanId, srcPubKey,
 				dstChanId, dstPubKey,
-				amt, cfg.Rebalance.FeeLimitRate,
+				amt, gCfg.Rebalance.FeeLimitRate,
 				LoopAttemptNoRoutes,
 			))
 			return false
@@ -334,11 +334,11 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 		if (route.TotalFeesMsat / 1000) > feeLimitFixed {
 			fmt.Println("route exceeds fee limit")
 			fmt.Println()
-			insertLoopAttempt(db, NewLoopAttempt(
+			insertLoopAttempt(NewLoopAttempt(
 				time.Now().Unix(),
 				srcChanId, srcPubKey,
 				dstChanId, dstPubKey,
-				amt, cfg.Rebalance.FeeLimitRate,
+				amt, gCfg.Rebalance.FeeLimitRate,
 				LoopAttemptNoRoutes,
 			))
 			return false
@@ -362,7 +362,7 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 				RPreimage: preimage,
 				Value:     amt,
 			}
-			invoiceRsp, err = client.AddInvoice(ctxt, invoice)
+			invoiceRsp, err = gClient.AddInvoice(ctxt, invoice)
 			if err != nil {
 				panic(fmt.Sprintf("unable to add invoice:", err))
 			}
@@ -370,7 +370,7 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 
 		fmt.Println("sending to route")
 
-		sendRsp, err := router.SendToRoute(ctxt, &routerrpc.SendToRouteRequest{
+		sendRsp, err := gRouter.SendToRoute(ctxt, &routerrpc.SendToRouteRequest{
 			PaymentHash: invoiceRsp.RHash,
 			Route:       route,
 		})
@@ -383,7 +383,7 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 			pubKey :=
 				hex.EncodeToString(sendRsp.Failure.GetFailureSourcePubkey())
 
-			nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+			nodeInfo, err := gClient.GetNodeInfo(gCtx, &lnrpc.NodeInfoRequest{
 				PubKey: pubKey,
 			})
 			if err != nil {
@@ -406,7 +406,7 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 					}
 					chanId := route.Hops[ndx+1].ChanId
 					nextChanInfo, err :=
-						client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
+						gClient.GetChanInfo(gCtx, &lnrpc.ChanInfoRequest{
 							ChanId: chanId,
 						})
 					if err != nil {
@@ -435,11 +435,11 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 			panic(fmt.Sprintf("couldn't find matching hop"))
 		} else {
 			fmt.Printf("PREIMAGE: %s\n", hex.EncodeToString(sendRsp.Preimage))
-			insertLoopAttempt(db, NewLoopAttempt(
+			insertLoopAttempt(NewLoopAttempt(
 				time.Now().Unix(),
 				srcChanId, srcPubKey,
 				dstChanId, dstPubKey,
-				amt, cfg.Rebalance.FeeLimitRate,
+				amt, gCfg.Rebalance.FeeLimitRate,
 				LoopAttemptSuccess,
 			))
 			return true
@@ -448,11 +448,11 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 
 FailedToRoute:
 	fmt.Println("failed to route payment")
-	insertLoopAttempt(db, NewLoopAttempt(
+	insertLoopAttempt(NewLoopAttempt(
 		time.Now().Unix(),
 		srcChanId, srcPubKey,
 		dstChanId, dstPubKey,
-		amt, cfg.Rebalance.FeeLimitRate,
+		amt, gCfg.Rebalance.FeeLimitRate,
 		LoopAttemptFailure,
 	))
 	return false

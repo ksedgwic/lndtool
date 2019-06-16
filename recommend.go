@@ -37,19 +37,19 @@ func NewPotentialLoop(
 func recommend(doit bool) bool {
 
 	var blacklist = map[string]bool{}
-	for _, node := range cfg.Recommend.PeerNodeBlacklist {
+	for _, node := range gCfg.Recommend.PeerNodeBlacklist {
 		blacklist[node] = true
 	}
 	var srclist = map[uint64]bool{}
-	for _, node := range cfg.Recommend.SrcChanTarget {
+	for _, node := range gCfg.Recommend.SrcChanTarget {
 		srclist[node] = true
 	}
 	var dstlist = map[uint64]bool{}
-	for _, node := range cfg.Recommend.DstChanTarget {
+	for _, node := range gCfg.Recommend.DstChanTarget {
 		dstlist[node] = true
 	}
 
-	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
+	rsp, err := gClient.ListChannels(gCtx, &lnrpc.ListChannelsRequest{
 		ActiveOnly:   true,
 		InactiveOnly: false,
 		PublicOnly:   true,
@@ -99,7 +99,7 @@ func recommend(doit bool) bool {
 			srcImbalance :=
 				srcChan.LocalBalance -
 					((srcChan.LocalBalance + srcChan.RemoteBalance) / 2)
-			if srcImbalance < cfg.Recommend.MinImbalance {
+			if srcImbalance < gCfg.Recommend.MinImbalance {
 				continue
 			}
 
@@ -107,7 +107,7 @@ func recommend(doit bool) bool {
 			dstImbalance :=
 				dstChan.LocalBalance -
 					((dstChan.LocalBalance + dstChan.RemoteBalance) / 2)
-			if dstImbalance > -cfg.Recommend.MinImbalance {
+			if dstImbalance > -gCfg.Recommend.MinImbalance {
 				continue
 			}
 
@@ -135,18 +135,18 @@ func recommend(doit bool) bool {
 	for _, loop := range loops {
 		// Limit the rebalance amount
 		amount := loop.Amount
-		if amount > cfg.Recommend.TransferAmount {
-			amount = cfg.Recommend.TransferAmount
+		if amount > gCfg.Recommend.TransferAmount {
+			amount = gCfg.Recommend.TransferAmount
 		}
 
 		// Consider recent history
-		tstamp := time.Now().Unix() - int64(cfg.Recommend.RetryInhibit.Seconds())
-		if !recentlyFailed(db, loop.SrcChan, loop.DstChan, tstamp, amount, cfg.Rebalance.FeeLimitRate) {
+		tstamp := time.Now().Unix() - int64(gCfg.Recommend.RetryInhibit.Seconds())
+		if !recentlyFailed(loop.SrcChan, loop.DstChan, tstamp, amount, gCfg.Rebalance.FeeLimitRate) {
 			if doit {
 				doRebalance(amount, loop.SrcChan, loop.DstChan)
 				return true
 			} else {
-				fmt.Printf("rebalance %d %d %d\n",
+				fmt.Printf("lndtool rebalance -a %d -s %d -d %d\n",
 					amount, loop.SrcChan, loop.DstChan)
 				return true
 			}

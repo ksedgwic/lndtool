@@ -134,7 +134,7 @@ func (node *Node) Propagate(hops int, fee float64) {
 }
 
 func farSide() {
-	rsp, err := client.DescribeGraph(ctx, &lnrpc.ChannelGraphRequest{})
+	rsp, err := gClient.DescribeGraph(gCtx, &lnrpc.ChannelGraphRequest{})
 	if err != nil {
 		fmt.Println("Cannot describe graph from node:", err)
 		return

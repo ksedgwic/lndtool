@@ -22,29 +22,29 @@ import (
 var edgeLimit map[*lnrpc.EdgeLocator]int64
 
 var (
-	cfg    *config
-	client lnrpc.LightningClient
-	router routerrpc.RouterClient
-	ctx    context.Context
-	db     *sql.DB
+	gCfg    *config
+	gClient lnrpc.LightningClient
+	gRouter routerrpc.RouterClient
+	gCtx    context.Context
+	gDB     *sql.DB
 )
 
 func main() {
 	edgeLimit = map[*lnrpc.EdgeLocator]int64{}
 
 	var err error
-	cfg, err = loadConfig()
+	gCfg, err = loadConfig()
 	if err != nil {
 		os.Exit(0)
 	}
 
-	tlsCreds, err := credentials.NewClientTLSFromFile(cfg.TLSCertPath, "")
+	tlsCreds, err := credentials.NewClientTLSFromFile(gCfg.TLSCertPath, "")
 	if err != nil {
 		fmt.Println("Cannot get node tls credentials", err)
 		return
 	}
 
-	macaroonBytes, err := ioutil.ReadFile(cfg.MacaroonPath)
+	macaroonBytes, err := ioutil.ReadFile(gCfg.MacaroonPath)
 	if err != nil {
 		fmt.Println("Cannot read macaroon file", err)
 		return
@@ -64,17 +64,17 @@ func main() {
 			grpc.MaxCallRecvMsgSize(1 * 1024 * 1024 * 50)),
 	}
 
-	conn, err := grpc.Dial(cfg.RPCServer, opts...)
+	conn, err := grpc.Dial(gCfg.RPCServer, opts...)
 	if err != nil {
 		fmt.Println("cannot dial to lnd", err)
 		return
 	}
-	client = lnrpc.NewLightningClient(conn)
-	router = routerrpc.NewRouterClient(conn)
-	ctx = context.Background()
+	gClient = lnrpc.NewLightningClient(conn)
+	gRouter = routerrpc.NewRouterClient(conn)
+	gCtx = context.Background()
 
-	db = openDatabase()
-	createDatabase(db)
+	openDatabase()
+	createDatabase()
 
 	if command != nil {
 		command.RunCommand()

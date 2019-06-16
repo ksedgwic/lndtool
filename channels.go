@@ -28,8 +28,8 @@ type FwdStats map[uint64]*FwdStatsElem
 func getFwdStats() *FwdStats {
 	retval := FwdStats{}
 
-	hist, err := client.ForwardingHistory(ctx, &lnrpc.ForwardingHistoryRequest{
-		StartTime: uint64((time.Now().Add(-cfg.Channels.StatsWindow)).Unix()),
+	hist, err := gClient.ForwardingHistory(gCtx, &lnrpc.ForwardingHistoryRequest{
+		StartTime: uint64((time.Now().Add(-gCfg.Channels.StatsWindow)).Unix()),
 		EndTime:   uint64(time.Now().Unix()),
 	})
 	if err != nil {
@@ -82,12 +82,12 @@ func listChannels() {
 
 	fwdStats := getFwdStats()
 
-	info, err := client.GetInfo(ctx, &lnrpc.GetInfoRequest{})
+	info, err := gClient.GetInfo(gCtx, &lnrpc.GetInfoRequest{})
 	if err != nil {
 		panic(fmt.Sprint("GetInfo failed: %v\n", err))
 	}
 
-	rsp, err := client.ListChannels(ctx, &lnrpc.ListChannelsRequest{
+	rsp, err := gClient.ListChannels(gCtx, &lnrpc.ListChannelsRequest{
 		ActiveOnly:   false,
 		InactiveOnly: false,
 		PublicOnly:   false,
@@ -108,7 +108,7 @@ func listChannels() {
 		return rsp.Channels[ii].ChanId < rsp.Channels[jj].ChanId
 	})
 	for _, chn := range rsp.Channels {
-		nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+		nodeInfo, err := gClient.GetNodeInfo(gCtx, &lnrpc.NodeInfoRequest{
 			PubKey: chn.RemotePubkey,
 		})
 		if err != nil {
@@ -117,7 +117,7 @@ func listChannels() {
 		rmtCap := nodeInfo.TotalCapacity
 		alias := nodeInfo.Node.Alias
 
-		chanInfo, err := client.GetChanInfo(ctx, &lnrpc.ChanInfoRequest{
+		chanInfo, err := gClient.GetChanInfo(gCtx, &lnrpc.ChanInfoRequest{
 			ChanId: chn.ChanId,
 		})
 		if err != nil {
@@ -153,7 +153,7 @@ func listChannels() {
 		imbalance := chn.LocalBalance -
 			((chn.LocalBalance + chn.RemoteBalance) / 2)
 
-		chanStats := chanStats(db, chn.ChanId)
+		chanStats := chanStats(chn.ChanId)
 		chnStatsStr := fmt.Sprintf("%1.0f %1.0f %1.0f %1.0f %1.0f %1.0f",
 			math.Log10(float64(chanStats.RcvCnt+1)),
 			math.Log10(float64(chanStats.RcvErr+1)),
@@ -204,7 +204,7 @@ func listChannels() {
 		sumRemote += chn.RemoteBalance
 	}
 
-	pendingChannels, err := client.PendingChannels(ctx, &lnrpc.PendingChannelsRequest{})
+	pendingChannels, err := gClient.PendingChannels(gCtx, &lnrpc.PendingChannelsRequest{})
 	if err != nil {
 		panic(fmt.Sprint("PendingChannels failed:", err))
 	}
@@ -213,7 +213,7 @@ func listChannels() {
 		initiator := "o"
 		active := "o"
 
-		nodeInfo, err := client.GetNodeInfo(ctx, &lnrpc.NodeInfoRequest{
+		nodeInfo, err := gClient.GetNodeInfo(gCtx, &lnrpc.NodeInfoRequest{
 			PubKey: chn2.Channel.RemoteNodePub,
 		})
 		if err != nil {
