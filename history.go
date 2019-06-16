@@ -51,14 +51,14 @@ func NewLoopAttempt(
 }
 
 func openDatabase() *sql.DB {
-	db, err := sql.Open("sqlite3", "./lndtool.db")
+	db, err := sql.Open("sqlite3", cfg.DBFile)
 	if err != nil {
 		panic(fmt.Sprintf("sql.Open failed: %v", err))
 	}
 	return db
 }
 
-func createDatabase(cfg *config, db *sql.DB) {
+func createDatabase(db *sql.DB) {
 	cmds := []string{`
         CREATE TABLE IF NOT EXISTS loop_attempt (
 	        id INTEGER PRIMARY KEY,

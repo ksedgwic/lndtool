@@ -18,6 +18,7 @@ import (
 
 const (
 	defaultConfigFilename   = "lndtool.conf"
+	defaultDBFilename       = "lndtool.db"
 	defaultTLSCertFilename  = "tls.cert"
 	defaultMacaroonFilename = "admin.macaroon"
 	defaultRPCPort          = "10009"
@@ -37,6 +38,7 @@ var (
 	defaultLndDir       = btcutil.AppDataDir("lnd", false)
 	defaultLndToolDir   = btcutil.AppDataDir("lndtool", false)
 	defaultConfigFile   = filepath.Join(defaultLndToolDir, defaultConfigFilename)
+	defaultDBFile       = filepath.Join(defaultLndToolDir, defaultDBFilename)
 	defaultTLSCertPath  = filepath.Join(defaultLndDir, defaultTLSCertFilename)
 	defaultMacaroonPath = filepath.Join(
 		defaultLndDir, "data", "chain", "bitcoin", "mainnet", defaultMacaroonFilename,
@@ -66,6 +68,7 @@ type config struct {
 	LndDir     string `long:"lnddir" description:"The base directory that contains lnd's data, logs, configuration file, etc."`
 	LndToolDir string `long:"lndtooldir" description:"The base directory that contains lndtool's data, logs, configuration file, etc."`
 	ConfigFile string `long:"C" long:"configfile" description:"Path to configuration file"`
+	DBFile     string `long:"dbfile" description:"Path to database file"`
 
 	TLSCertPath string `long:"tlscertpath" description:"Path to read the TLS certificate for lnd's RPC and REST services"`
 
@@ -81,6 +84,7 @@ var defaultCfg = config{
 	LndDir:       defaultLndDir,
 	LndToolDir:   defaultLndToolDir,
 	ConfigFile:   defaultConfigFile,
+	DBFile:       defaultDBFile,
 	TLSCertPath:  defaultTLSCertPath,
 	MacaroonPath: defaultMacaroonPath,
 	RPCServer:    defaultRPCServer,

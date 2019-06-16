@@ -74,7 +74,7 @@ func main() {
 	ctx = context.Background()
 
 	db = openDatabase()
-	createDatabase(cfg, db)
+	createDatabase(db)
 
 	if command != nil {
 		command.RunCommand()
