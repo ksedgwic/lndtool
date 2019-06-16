@@ -105,7 +105,7 @@ func nilHandler(flags.Commander, []string) error {
 	return nil
 }
 
-func loadConfig() (*config, []string, error) {
+func loadConfig() (*config, error) {
 	// Pre-parse the command line options to pick up an alternative
 	// config file.
 	preCfg := defaultCfg
@@ -113,7 +113,7 @@ func loadConfig() (*config, []string, error) {
 	addCommands(preParser)
 	preParser.CommandHandler = nilHandler // disable execution on this pass
 	if _, err := preParser.Parse(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// If the config file path has not been modified by the user, then we'll
@@ -138,7 +138,7 @@ func loadConfig() (*config, []string, error) {
 		// immediately, otherwise we can proceed as possibly the config
 		// file doesn't exist which is OK.
 		if _, ok := err.(*flags.IniError); ok {
-			return nil, nil, err
+			return nil, err
 		}
 
 		configFileError = err
@@ -148,9 +148,9 @@ func loadConfig() (*config, []string, error) {
 	// they take precedence.
 	parser := flags.NewParser(&postCfg, flags.Default)
 	addCommands(parser)
-	args, err := parser.Parse()
+	_, err := parser.Parse()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// As soon as we're done parsing configuration options, ensure all paths
@@ -167,7 +167,7 @@ func loadConfig() (*config, []string, error) {
 		fmt.Printf("%v\n", configFileError)
 	}
 
-	return &postCfg, args, nil
+	return &postCfg, nil
 }
 
 // cleanAndExpandPath expands environment variables and leading ~ in the
@@ -298,6 +298,7 @@ func (cmd *RebalanceCmd) RunCommand() error {
 }
 
 type RecommendCmd struct {
+	DoIt bool `short:"d" long:"doit" description:"Execute the recommended rebalance command"`
 }
 
 var recommendCmd RecommendCmd
@@ -309,7 +310,7 @@ func (cmd *RecommendCmd) Execute(args []string) error {
 }
 
 func (cmd *RecommendCmd) RunCommand() error {
-	recommend()
+	recommend(cmd.DoIt)
 	return nil
 }
 
@@ -326,7 +327,7 @@ func (cmd *AutoBalanceCmd) Execute(args []string) error {
 
 func (cmd *AutoBalanceCmd) RunCommand() error {
 	for {
-		if !recommend() {
+		if !recommend(true) {
 			break
 		}
 	}

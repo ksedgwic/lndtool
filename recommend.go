@@ -34,7 +34,7 @@ func NewPotentialLoop(
 	}
 }
 
-func recommend() bool {
+func recommend(doit bool) bool {
 
 	var blacklist = map[string]bool{}
 	for _, node := range cfg.Recommend.PeerNodeBlacklist {
@@ -142,8 +142,14 @@ func recommend() bool {
 		// Consider recent history
 		tstamp := time.Now().Unix() - int64(cfg.Recommend.RetryInhibit.Seconds())
 		if !recentlyFailed(db, loop.SrcChan, loop.DstChan, tstamp, amount, cfg.Rebalance.FeeLimitRate) {
-			doRebalance(amount, loop.SrcChan, loop.DstChan)
-			return true
+			if doit {
+				doRebalance(amount, loop.SrcChan, loop.DstChan)
+				return true
+			} else {
+				fmt.Printf("rebalance %d %d %d\n",
+					amount, loop.SrcChan, loop.DstChan)
+				return true
+			}
 		}
 	}
 

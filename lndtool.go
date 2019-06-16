@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/routerrpc"
 	"github.com/lightningnetwork/lnd/macaroons"
@@ -33,9 +32,8 @@ var (
 func main() {
 	edgeLimit = map[*lnrpc.EdgeLocator]int64{}
 
-	var args []string
 	var err error
-	cfg, args, err = loadConfig()
+	cfg, err = loadConfig()
 	if err != nil {
 		os.Exit(0)
 	}
@@ -76,50 +74,10 @@ func main() {
 	ctx = context.Background()
 
 	db = openDatabase()
+	createDatabase(cfg, db)
 
 	if command != nil {
 		command.RunCommand()
 		os.Exit(0)
-	}
-
-	cmd := args[0]
-	switch cmd {
-	case "dumpconfig":
-		{
-			spew.Dump(cfg)
-		}
-	case "channels":
-		{
-			listChannels()
-		}
-	case "farside":
-		{
-			farSide()
-		}
-	case "rebalance":
-		{
-			rebalance(args[1:])
-		}
-	case "recommend":
-		{
-			recommend()
-		}
-	case "autobalance":
-		{
-			for {
-				if !recommend() {
-					break
-				}
-			}
-		}
-	case "mkdb":
-		{
-			createDatabase(cfg, db)
-		}
-	default:
-		{
-			fmt.Printf("command \"%s\" unknown\n", cmd)
-			os.Exit(1)
-		}
 	}
 }
