@@ -160,18 +160,57 @@ func loadConfig() (*config, error) {
 		return nil, err
 	}
 
+	// If the provided lnd directory is not the default, we'll modify the
+	// path to all of the files and directories that will live within it.
+	lndDir := cleanAndExpandPath(postCfg.LndDir)
+	if lndDir != defaultLndDir {
+		postCfg.TLSCertPath = filepath.Join(lndDir, defaultTLSCertFilename)
+		postCfg.MacaroonPath = filepath.Join(
+			lndDir,
+			"data", "chain", "bitcoin", "mainnet",
+			defaultMacaroonFilename,
+		)
+	}
+
+	// If the provided lndtool directory is not the default, we'll modify the
+	// path to all of the files and directories that will live within it.
+	lndToolDir := cleanAndExpandPath(postCfg.LndToolDir)
+	if lndToolDir != defaultLndToolDir {
+		postCfg.DBFile = filepath.Join(lndToolDir, defaultDBFilename)
+	}
+
+	// Create the lndtool directory if it doesn't already exist.
+	funcName := "loadConfig"
+	if err := os.MkdirAll(lndToolDir, 0700); err != nil {
+		// Show a nicer error message if it's because a symlink is
+		// linked to a directory that does not exist (probably because
+		// it's not mounted).
+		if e, ok := err.(*os.PathError); ok && os.IsExist(err) {
+			if link, lerr := os.Readlink(e.Path); lerr == nil {
+				str := "is symlink %s -> %s mounted?"
+				err = fmt.Errorf(str, e.Path, link)
+			}
+		}
+
+		str := "%s: Failed to create lndtool directory: %v"
+		err := fmt.Errorf(str, funcName, err)
+		fmt.Fprintln(os.Stderr, err)
+		return nil, err
+	}
+
 	// As soon as we're done parsing configuration options, ensure all paths
 	// to directories and files are cleaned and expanded before attempting
 	// to use them later on.
 	postCfg.TLSCertPath = cleanAndExpandPath(postCfg.TLSCertPath)
 	postCfg.MacaroonPath = cleanAndExpandPath(postCfg.MacaroonPath)
+	postCfg.DBFile = cleanAndExpandPath(postCfg.DBFile)
 
 	// Warn about missing config file only after all other configuration is
 	// done.  This prevents the warning on help messages and invalid
 	// options.  Note this should go directly before the return.
 	if configFileError != nil {
 		// ltndLog.Warnf("%v", configFileError)
-		fmt.Printf("%v\n", configFileError)
+		fmt.Printf("warn: %v\n", configFileError)
 	}
 
 	return &postCfg, nil
