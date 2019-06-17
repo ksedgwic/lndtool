@@ -154,8 +154,13 @@ func farSide() {
 		nodes[ee.Node2Pub].AddEdge(edge, ee.Node2Policy, nodes[ee.Node1Pub])
 	}
 
-	bonsai := nodes["02a5fa844d310f582d209fe649352b225440b8a54e77361f229bb92ee263c87e6f"]
-	bonsai.Propagate(0, 0)
+	info, err := gClient.GetInfo(gCtx, &lnrpc.GetInfoRequest{})
+	if err != nil {
+		panic(fmt.Sprint("GetInfo failed: %v\n", err))
+	}
+
+	ournode := nodes[info.IdentityPubkey]
+	ournode.Propagate(0, 0)
 
 	selected := []*Node{}
 	for _, vv := range nodes {
