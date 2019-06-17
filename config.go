@@ -18,11 +18,9 @@ import (
 
 const (
 	defaultVerbose          = false
-	defaultConfigFilename   = "lndtool.conf"
-	defaultDBFilename       = "lndtool.db"
+	defaultNetwork          = "mainnet"
 	defaultTLSCertFilename  = "tls.cert"
 	defaultMacaroonFilename = "admin.macaroon"
-	defaultRPCPort          = "10009"
 	defaultRPCHost          = "localhost"
 
 	defaultStatsWindow = (time.Hour * 24 * 30)
@@ -35,16 +33,35 @@ const (
 	defaultRetryInhibit   = time.Hour
 )
 
+func rpcPort(network string) string {
+	switch network {
+	case "mainnet":
+		{
+			return "10009"
+		}
+	case "testnet":
+		{
+			return "11009"
+		}
+	default:
+		{
+			return "unknown"
+		}
+	}
+}
+
 var (
-	defaultLndDir       = btcutil.AppDataDir("lnd", false)
-	defaultLndToolDir   = btcutil.AppDataDir("lndtool", false)
-	defaultConfigFile   = filepath.Join(defaultLndToolDir, defaultConfigFilename)
-	defaultDBFile       = filepath.Join(defaultLndToolDir, defaultDBFilename)
+	defaultLndDir     = btcutil.AppDataDir("lnd", false)
+	defaultLndToolDir = btcutil.AppDataDir("lndtool", false)
+	defaultConfigFile = filepath.Join(
+		defaultLndToolDir, "lndtool-"+defaultNetwork+".conf")
+	defaultDBFile = filepath.Join(
+		defaultLndToolDir, "lndtool-"+defaultNetwork+".db")
 	defaultTLSCertPath  = filepath.Join(defaultLndDir, defaultTLSCertFilename)
 	defaultMacaroonPath = filepath.Join(
-		defaultLndDir, "data", "chain", "bitcoin", "mainnet", defaultMacaroonFilename,
+		defaultLndDir, "data", "chain", "bitcoin", defaultNetwork, defaultMacaroonFilename,
 	)
-	defaultRPCServer = defaultRPCHost + ":" + defaultRPCPort
+	defaultRPCServer = defaultRPCHost + ":" + rpcPort(defaultNetwork)
 )
 
 type channelsConfig struct {
@@ -67,6 +84,7 @@ type recommendConfig struct {
 
 type config struct {
 	Verbose    bool   `long:"verbose" description:"Verbose output"`
+	Network    string `long:"network" description:"Network (mainnet, testnet, ...)"`
 	LndDir     string `long:"lnddir" description:"The base directory that contains lnd's data, logs, configuration file, etc."`
 	LndToolDir string `long:"lndtooldir" description:"The base directory that contains lndtool's data, logs, configuration file, etc."`
 	ConfigFile string `long:"C" long:"configfile" description:"Path to configuration file"`
@@ -84,6 +102,7 @@ type config struct {
 
 var defaultCfg = config{
 	Verbose:      defaultVerbose,
+	Network:      defaultNetwork,
 	LndDir:       defaultLndDir,
 	LndToolDir:   defaultLndToolDir,
 	ConfigFile:   defaultConfigFile,
@@ -123,18 +142,34 @@ func loadConfig() (*config, error) {
 		return nil, err
 	}
 
+	// If the network has been changed on the command line update dependent
+	// defaults.
+	if preCfg.Network != defaultNetwork {
+		preCfg.RPCServer = defaultRPCHost + ":" + rpcPort(preCfg.Network)
+		preCfg.ConfigFile = filepath.Join(
+			defaultLndToolDir, "lndtool-"+preCfg.Network+".conf")
+		preCfg.DBFile = filepath.Join(
+			defaultLndToolDir, "lndtool-"+preCfg.Network+".db")
+		preCfg.MacaroonPath = filepath.Join(
+			defaultLndDir,
+			"data", "chain", "bitcoin", preCfg.Network,
+			defaultMacaroonFilename,
+		)
+	}
+
 	// If the config file path has not been modified by the user, then we'll
 	// use the default config file path. However, if the user has modified
 	// their lnddir, then we should assume they intend to use the config
 	// file within it.
-	configFileDir := cleanAndExpandPath(preCfg.LndToolDir)
+	lndtdir := cleanAndExpandPath(preCfg.LndToolDir)
 	configFilePath := cleanAndExpandPath(preCfg.ConfigFile)
-	if configFileDir != defaultLndDir {
+	if lndtdir != defaultLndDir {
 		if configFilePath == defaultConfigFile {
 			configFilePath = filepath.Join(
-				configFileDir, defaultConfigFilename,
-			)
+				lndtdir, "lndtool-"+preCfg.Network+".conf")
 		}
+		preCfg.DBFile = filepath.Join(
+			lndtdir, "lndtool-"+preCfg.Network+".db")
 	}
 
 	// Next, load any additional configuration options from the file.
@@ -167,7 +202,7 @@ func loadConfig() (*config, error) {
 		postCfg.TLSCertPath = filepath.Join(lndDir, defaultTLSCertFilename)
 		postCfg.MacaroonPath = filepath.Join(
 			lndDir,
-			"data", "chain", "bitcoin", "mainnet",
+			"data", "chain", "bitcoin", postCfg.Network,
 			defaultMacaroonFilename,
 		)
 	}
@@ -176,7 +211,8 @@ func loadConfig() (*config, error) {
 	// path to all of the files and directories that will live within it.
 	lndToolDir := cleanAndExpandPath(postCfg.LndToolDir)
 	if lndToolDir != defaultLndToolDir {
-		postCfg.DBFile = filepath.Join(lndToolDir, defaultDBFilename)
+		postCfg.DBFile = filepath.Join(
+			lndToolDir, "lndtool-"+preCfg.Network+".db")
 	}
 
 	// Create the lndtool directory if it doesn't already exist.

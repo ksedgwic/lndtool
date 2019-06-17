@@ -263,7 +263,7 @@ func listChannels() {
 		imbalance,
 		chnFwdStatsStr,
 		abbrevPubKey(info.IdentityPubkey),
-		math.Log10(float64(sumCapacity)),
+		math.Log10(float64(sumCapacity+1)),
 		info.Alias,
 	)
 }
