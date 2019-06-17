@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	defaultVerbose          = false
 	defaultConfigFilename   = "lndtool.conf"
 	defaultDBFilename       = "lndtool.db"
 	defaultTLSCertFilename  = "tls.cert"
@@ -65,6 +66,7 @@ type recommendConfig struct {
 }
 
 type config struct {
+	Verbose    bool   `long:"verbose" description:"Verbose output"`
 	LndDir     string `long:"lnddir" description:"The base directory that contains lnd's data, logs, configuration file, etc."`
 	LndToolDir string `long:"lndtooldir" description:"The base directory that contains lndtool's data, logs, configuration file, etc."`
 	ConfigFile string `long:"C" long:"configfile" description:"Path to configuration file"`
@@ -81,6 +83,7 @@ type config struct {
 }
 
 var defaultCfg = config{
+	Verbose:      defaultVerbose,
 	LndDir:       defaultLndDir,
 	LndToolDir:   defaultLndToolDir,
 	ConfigFile:   defaultConfigFile,

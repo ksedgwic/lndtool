@@ -227,6 +227,12 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 	} else {
 		srcPubKey = srcChanInfo.Node1Pub
 	}
+	srcNodeInfo, err := gClient.GetNodeInfo(gCtx, &lnrpc.NodeInfoRequest{
+		PubKey: srcPubKey,
+	})
+	if err != nil {
+		panic(fmt.Sprint("src GetNodeInfo failed:", err))
+	}
 
 	// What is the dst pub key?
 	dstChanInfo, err := gClient.GetChanInfo(gCtx, &lnrpc.ChanInfoRequest{
@@ -241,10 +247,19 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 	} else {
 		dstPubKey = dstChanInfo.Node1Pub
 	}
+	dstNodeInfo, err := gClient.GetNodeInfo(gCtx, &lnrpc.NodeInfoRequest{
+		PubKey: dstPubKey,
+	})
+	if err != nil {
+		panic(fmt.Sprint("dst GetNodeInfo failed:", err))
+	}
 
 	feeLimitPercent := gCfg.Rebalance.FeeLimitRate * 100
 	feeLimitFixed := int64(float64(amt) * (feeLimitPercent / 100))
-	fmt.Printf("limit fee rate to %f, %d sat\n", gCfg.Rebalance.FeeLimitRate, feeLimitFixed)
+	if gCfg.Verbose {
+		fmt.Printf("limit fee rate to %f, %d sat\n",
+			gCfg.Rebalance.FeeLimitRate, feeLimitFixed)
+	}
 
 	// Defer creating invoice until we get far enough to need one.
 	var invoiceRsp *lnrpc.AddInvoiceResponse = nil
@@ -266,8 +281,24 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 			}
 		}
 
-		fmt.Printf("querying possible routes, fee limit %d sat, ignoring %d edges\n",
-			feeLimitFixed, len(badEdges))
+		srcAlias := srcNodeInfo.Node.Alias
+		if len(srcAlias) > 26 {
+			srcAlias = srcAlias[:26]
+		}
+		dstAlias := dstNodeInfo.Node.Alias
+		if len(dstAlias) > 26 {
+			dstAlias = dstAlias[:26]
+		}
+
+		fmt.Printf("%d %26s -> %-26s %d %7d: ",
+			srcChanId, srcAlias, dstAlias, dstChanId, amt)
+
+		if gCfg.Verbose {
+			fmt.Println()
+			fmt.Printf(
+				"querying possible routes, fee limit %d sat, ignoring %d edges\n",
+				feeLimitFixed, len(badEdges))
+		}
 		rsp, err := gClient.QueryRoutes(gCtx, &lnrpc.QueryRoutesRequest{
 			PubKey: dstPubKey,
 			Amt:    amt,
@@ -327,13 +358,14 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 
 		repriceRoute(info, route, amt)
 
-		dumpRoute(info, route)
+		if gCfg.Verbose {
+			dumpRoute(info, route)
+		}
 
 		checkRoute(info, route)
 
 		if (route.TotalFeesMsat / 1000) > feeLimitFixed {
 			fmt.Println("route exceeds fee limit")
-			fmt.Println()
 			insertLoopAttempt(NewLoopAttempt(
 				time.Now().Unix(),
 				srcChanId, srcPubKey,
@@ -348,7 +380,9 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 			context.WithTimeout(context.Background(), time.Second*60)
 
 		if invoiceRsp == nil {
-			fmt.Println("generating invoice")
+			if gCfg.Verbose {
+				fmt.Println("generating invoice")
+			}
 
 			// Generate an invoice.
 			preimage := make([]byte, 32)
@@ -368,7 +402,9 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 			}
 		}
 
-		fmt.Println("sending to route")
+		if gCfg.Verbose {
+			fmt.Println("sending to route")
+		}
 
 		sendRsp, err := gRouter.SendToRoute(ctxt, &routerrpc.SendToRouteRequest{
 			PaymentHash: invoiceRsp.RHash,
@@ -391,8 +427,7 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 			}
 			alias := nodeInfo.Node.Alias
 
-			fmt.Printf("%30s: %s\n", alias, sendRsp.Failure.Code.String())
-			fmt.Println()
+			fmt.Printf("%s: %s\n", alias, sendRsp.Failure.Code.String())
 
 			// Figure out which edge to ignore
 			for ndx, hop := range route.Hops {
@@ -423,12 +458,16 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 							ChannelId:        chanId,
 							DirectionReverse: reverse,
 						}
-						fmt.Printf("ignoring %v\n", badEdge)
+						if gCfg.Verbose {
+							fmt.Printf("ignoring %v\n", badEdge)
+						}
 						if edgeLimit[badEdge] == 0 || amt < edgeLimit[badEdge] {
 							edgeLimit[badEdge] = amt
 						}
 					}
-					fmt.Println()
+					if gCfg.Verbose {
+						fmt.Println()
+					}
 					goto RetryQuery
 				}
 			}
@@ -447,7 +486,6 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 	}
 
 FailedToRoute:
-	fmt.Println("failed to route payment")
 	insertLoopAttempt(NewLoopAttempt(
 		time.Now().Unix(),
 		srcChanId, srcPubKey,
