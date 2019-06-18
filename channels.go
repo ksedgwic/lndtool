@@ -97,7 +97,7 @@ func listChannels() {
 		panic(fmt.Sprint("ListChannels failed:", err))
 	}
 
-	color.Bold.Println("ChanId              Flg  Capacity     Local    Remote  Imbalance FwdR  FwdS  PubKey                                                              Log Alias")
+	color.Bold.Println("             ChanId Flg  Capacity     Local    Remote  Imbalance FwdR  FwdS  PubKey                                                              Log Alias")
 
 	sumCapacity := int64(0)
 	sumLocal := int64(0)
@@ -255,7 +255,7 @@ func listChannels() {
 
 	imbalance := sumLocal - ((sumLocal + sumRemote) / 2)
 
-	color.Bold.Printf("%3d                     %9d %9d %9d %10d %s %s %4.1f %s\n",
+	color.Bold.Printf("%-4d                    %9d %9d %9d %10d %s %s %4.1f %s\n",
 		len(rsp.Channels)+len(pendingChannels.PendingOpenChannels),
 		sumCapacity,
 		sumLocal,
