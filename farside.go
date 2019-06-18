@@ -63,9 +63,9 @@ func (node *Node) Select() bool {
 	}
 
 	return node.NumHops > 2 &&
-		node.CumulativeFee > 200 &&
+		node.CumulativeFee > 100 &&
 		node.Capacity() > 10e6 &&
-		node.NumChan() > 20
+		node.NumChan() > 10
 }
 
 type ByUtility []*Node
@@ -162,6 +162,22 @@ func farSide() {
 	ournode := nodes[info.IdentityPubkey]
 	ournode.Propagate(0, 0)
 
+	if gCfg.Verbose {
+		all := []*Node{}
+		for _, vv := range nodes {
+			all = append(all, vv)
+		}
+		sort.Sort(ByUtility(all))
+		for _, nn := range all {
+			fmt.Printf("%s %9.2f %2d [%4.2f, %3d]\n",
+				nn.LightningNode.PubKey,
+				nn.CumulativeFee,
+				nn.NumHops,
+				math.Log10(float64(nn.Capacity()+1)),
+				nn.NumChan())
+		}
+	}
+
 	selected := []*Node{}
 	for _, vv := range nodes {
 		if vv.Select() {
@@ -174,7 +190,7 @@ func farSide() {
 			nn.LightningNode.PubKey,
 			nn.CumulativeFee,
 			nn.NumHops,
-			math.Log10(float64(nn.Capacity())),
+			math.Log10(float64(nn.Capacity()+1)),
 			nn.NumChan())
 	}
 }
