@@ -187,7 +187,7 @@ func listChannels() {
 			// chnStatsStr,
 			chnFwdStatsStr,
 			abbrevPubKey(chn.RemotePubkey),
-			math.Log10(float64(rmtCap)),
+			math.Log10(float64(rmtCap+1)),
 			alias,
 		)
 
@@ -213,14 +213,16 @@ func listChannels() {
 		initiator := "o"
 		active := "o"
 
+		rmtCap := int64(0)
+		alias := ""
 		nodeInfo, err := gClient.GetNodeInfo(gCtx, &lnrpc.NodeInfoRequest{
 			PubKey: chn2.Channel.RemoteNodePub,
 		})
-		if err != nil {
-			panic(fmt.Sprint("GetNodeInfo failed:", err))
+		if err == nil {
+			// Success path
+			rmtCap = nodeInfo.TotalCapacity
+			alias = nodeInfo.Node.Alias
 		}
-		rmtCap := nodeInfo.TotalCapacity
-		alias := nodeInfo.Node.Alias
 
 		chnFwdStatsStr := fmt.Sprintf("%s %s",
 			fmtAmountSci(float64(0)),
@@ -240,7 +242,7 @@ func listChannels() {
 			imbalance,
 			chnFwdStatsStr,
 			abbrevPubKey(chn2.Channel.RemoteNodePub),
-			math.Log10(float64(rmtCap)),
+			math.Log10(float64(rmtCap+1)),
 			alias,
 		)
 		sumCapacity += chn2.Channel.Capacity
