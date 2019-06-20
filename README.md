@@ -5,10 +5,15 @@ LND Tool
 
 The lndtool is a collection of utilities that might be useful for
 maintaining lnd lightning nodes. The tool connects to an operating lnd
-server via the gRPC port.
+server via the gRPC port and requires an admin macaroon.
 
 
 #### Channel List
+
+The channel list is useful for examining the channel state of an lnd
+node.  It shows per-channel balance and forwarding statistics as well
+as infomation about the connected peer.
+
 
 ```
              ChanId Flg  Capacity     Local    Remote  Imbalance FwdR  FwdS  PubKey                                                              Log Alias
@@ -54,4 +59,85 @@ server via the gRPC port.
  638333570219573249 RAE    191292         0    174012     -87006 0     0     032895e3187c376c65c143cad3660a8b43ef607d1dc6029573a24de15a91810357  7.0 SchneeFlocke
  639339623315931137 RIE    109533         0     94520     -47260 0     0     026a310e6ffd8ea0769eb137ac70e55fc556db17d53bdd826f5dbbd2f31825d39f  5.0 026a310e6ffd8ea0769e
 41                      191111622 101892007  88547278    6672365 1.4e7 1.4e7 02a5fa844d310f582d209fe649352b225440b8a54e77361f229bb92ee263c87e6f  8.3 BonsaiSoftware
+```
+
+#### Rebalance
+
+The rebalance subcommand uses a loop route to send funds from a
+specified "source" channel to a specified "destination" channel.  This
+is useful to reduce channel imbalances.
+
+A sample rebalance command looks like:
+```
+lndtool rebalance -a 1000000 -s 635057025564344321 -d 637569409742143488
+```
+
+#### Recommend
+
+The recommend subcommand evaulates overall channel state and
+constructs a rebalance command which will improve the overall balance
+of the node.
+
+If the `--doit` flag is asserted the rebalance command will be
+directly executed instead of printed.
+
+#### Autobalance
+
+The autobalance command loops using the recommend command and
+executing repeated rebalance commands.  It maintains a local sqlite
+database to avoid retrying rebalance pairs which don't find a
+successful route.
+
+#### Farside
+
+The farside subcommand extracts a channel graph of the network and
+attempts to determine well-funded, well-connected nodes that are
+"distant" (by hops and/or fees) and would therefore be attractive
+targets for new channels.  The farside subcommand is under development
+and is not currently very reliable.
+
+#### Usage
+
+```
+[user@bonsai lndtool]$ ./lndtool --help
+Usage:
+  lndtool [OPTIONS] <command>
+
+Application Options:
+      --verbose                      Verbose output
+      --network=                     Network (mainnet, testnet, ...) (default: mainnet)
+      --lnddir=                      The base directory that contains lnd's data, logs, configuration file, etc. (default: /home/user/.lnd)
+      --lndtooldir=                  The base directory that contains lndtool's data, logs, configuration file, etc. (default: /home/user/.lndtool)
+      --configfile=                  Path to configuration file (default: /home/user/.lndtool/lndtool-mainnet.conf)
+      --dbfile=                      Path to database file (default: /home/user/.lndtool/lndtool-mainnet.db)
+      --tlscertpath=                 Path to read the TLS certificate for lnd's RPC and REST services (default: /home/user/.lnd/tls.cert)
+      --macaroonpath=                path to macaroon file (default: /home/user/.lnd/data/chain/bitcoin/mainnet/admin.macaroon)
+      --rpcserver=                   host:port of ln daemon (default: localhost:10009)
+
+Channels:
+      --channels.statswindow=        Time window for channel statistics (default: 720h0m0s)
+
+Rebalance:
+      --rebalance.finalcltvdelta=    Final CLTV delta (default: 144)
+      --rebalance.feelimitrate=      Limit fees to this rate (default: 0.0005)
+
+Recommend:
+      --recommend.srcchantarget=     Adds channel to source target list (default: all)
+      --recommend.dstchantarget=     Adds channel to destination target list (default: all)
+      --recommend.peernodeblacklist= Adds node to peers to skip
+      --recommend.minimbalance=      Minimum imbalance to consider rebalancing (default: 1000)
+      --recommend.transferamount=    Size of rebalance transfers (default: 10000)
+      --recommend.retryinhibit=      Inhibit retrying failed loops for this long (default: 1h0m0s)
+
+Help Options:
+  -h, --help                         Show this help message
+
+Available commands:
+  autobalance  Loop balancing channels
+  channels     Lists channels in tabular form
+  dumpconfig   Dumps the configuration to stdout
+  farside      Finds nodes on the far side of the connected set
+  rebalance    Balance a pair of channels with a loop transaction
+  recommend    Recommend a pair of channels to rebalance
+
 ```
