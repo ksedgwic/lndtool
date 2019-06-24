@@ -28,9 +28,12 @@ type FwdStats map[uint64]*FwdStatsElem
 func getFwdStats() *FwdStats {
 	retval := FwdStats{}
 
+	// TODO - need a loop reading batches here
+
 	hist, err := gClient.ForwardingHistory(gCtx, &lnrpc.ForwardingHistoryRequest{
-		StartTime: uint64((time.Now().Add(-gCfg.Channels.StatsWindow)).Unix()),
-		EndTime:   uint64(time.Now().Unix()),
+		StartTime:    uint64((time.Now().Add(-gCfg.Channels.StatsWindow)).Unix()),
+		EndTime:      uint64(time.Now().Unix()),
+		NumMaxEvents: uint32(1000),
 	})
 	if err != nil {
 		panic(fmt.Sprint("ForwardingHistory failed: %v\n", err))
