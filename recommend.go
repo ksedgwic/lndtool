@@ -10,6 +10,11 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 )
 
+type NodeBalance struct {
+	LocalBalance  int64
+	RemoteBalance int64
+}
+
 type PotentialLoop struct {
 	SrcChan uint64
 	SrcNode string
@@ -59,6 +64,20 @@ func recommend(doit bool) bool {
 		panic(fmt.Sprint("ListChannels failed:", err))
 	}
 
+	// Aggregate local and remote balances per node (matters when
+	// there are multiple channels to the same node.
+	//
+	nodeBalances := map[string]*NodeBalance{}
+	for _, nodeChan := range rsp.Channels {
+		nb := nodeBalances[nodeChan.RemotePubkey]
+		if nb == nil {
+			nb = &NodeBalance{0, 0}
+			nodeBalances[nodeChan.RemotePubkey] = nb
+		}
+		nb.LocalBalance += nodeChan.LocalBalance
+		nb.RemoteBalance += nodeChan.RemoteBalance
+	}
+
 	// Consider all combinations of channels
 	loops := []*PotentialLoop{}
 	for srcNdx, srcChan := range rsp.Channels {
@@ -95,7 +114,25 @@ func recommend(doit bool) bool {
 				continue
 			}
 
-			// Make sure the source imbalance is positive:
+			// Make sure the aggregate source node imbalance is positive:
+			aggSrcImbalance :=
+				nodeBalances[srcChan.RemotePubkey].LocalBalance -
+					((nodeBalances[srcChan.RemotePubkey].LocalBalance +
+						nodeBalances[srcChan.RemotePubkey].RemoteBalance) / 2)
+			if aggSrcImbalance < gCfg.Recommend.MinImbalance {
+				continue
+			}
+
+			// Make sure the aggregate dest node imbalance is negative:
+			aggDstImbalance :=
+				nodeBalances[dstChan.RemotePubkey].LocalBalance -
+					((nodeBalances[dstChan.RemotePubkey].LocalBalance +
+						nodeBalances[dstChan.RemotePubkey].RemoteBalance) / 2)
+			if aggDstImbalance > -gCfg.Recommend.MinImbalance {
+				continue
+			}
+
+			// Make sure the specific source imbalance is positive:
 			srcImbalance :=
 				srcChan.LocalBalance -
 					((srcChan.LocalBalance + srcChan.RemoteBalance) / 2)
@@ -103,7 +140,7 @@ func recommend(doit bool) bool {
 				continue
 			}
 
-			// Make sure the destination imbalance is negative:
+			// Make sure the specific destination imbalance is negative:
 			dstImbalance :=
 				dstChan.LocalBalance -
 					((dstChan.LocalBalance + dstChan.RemoteBalance) / 2)
@@ -113,10 +150,10 @@ func recommend(doit bool) bool {
 
 			// What is the target amount to be moved?
 			amount := int64(0)
-			if srcImbalance < -dstImbalance {
-				amount = srcImbalance
+			if aggSrcImbalance < -aggDstImbalance {
+				amount = aggSrcImbalance
 			} else {
-				amount = -dstImbalance
+				amount = -aggDstImbalance
 			}
 
 			loops = append(loops, NewPotentialLoop(
