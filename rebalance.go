@@ -416,62 +416,92 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 		}
 
 		if sendRsp.Failure != nil {
-			pubKey :=
-				hex.EncodeToString(sendRsp.Failure.GetFailureSourcePubkey())
 
-			nodeInfo, err := gClient.GetNodeInfo(gCtx, &lnrpc.NodeInfoRequest{
-				PubKey: pubKey,
-			})
+			// errNdx is the node reporting the error.
+			// errNdx == 0 means self node.
+			// the hopNdx == errNdx is the failed hop.
+			//
+			errNdx := sendRsp.Failure.GetFailureSourceIndex()
+
+			// If we are reporting the error let's bail on this
+			// route altogether since the first hop doesn't work.
+			//
+			if errNdx == 0 {
+				goto FailedToRoute
+			}
+
+			// This is the pubKey of the node reporting the
+			// error.  We want to reject the next hop ...
+			//
+			pubKey := route.Hops[errNdx-1].PubKey
+
+			// fmt.Printf("errNdx %d\n", errNdx)
+			// for ndx, hop := range route.Hops {
+			//     fmt.Printf("%d: %s\n", ndx, hop.PubKey)
+			// }
+
+			// Get info about the node reporting the error.
+			nodeInfo0, err := gClient.GetNodeInfo(gCtx,
+				&lnrpc.NodeInfoRequest{
+					PubKey: pubKey,
+				})
 			if err != nil {
 				panic(fmt.Sprintf("GetNodeInfo failed[1]:", err))
 			}
-			alias := nodeInfo.Node.Alias
+			alias0 := nodeInfo0.Node.Alias
 
-			fmt.Printf("%s: %s\n", alias, sendRsp.Failure.Code.String())
+			// Get info about the target node of the failed hop.
+			nodeInfo1, err := gClient.GetNodeInfo(gCtx,
+				&lnrpc.NodeInfoRequest{
+					PubKey: route.Hops[errNdx].PubKey,
+				})
+			if err != nil {
+				panic(fmt.Sprintf("GetNodeInfo2 failed[1]:", err))
+			}
+			alias1 := nodeInfo1.Node.Alias
 
-			// Figure out which edge to ignore
-			for ndx, hop := range route.Hops {
-				if hop.PubKey == pubKey {
-					// We want to drop the next hop. Is this the next
-					// to last hop.?
-					if ndx == len(route.Hops)-2 {
-						// Can't skip the last hop ... this one's done.
-						fmt.Println("can't ignore last hop")
-						goto FailedToRoute
-					}
-					chanId := route.Hops[ndx+1].ChanId
-					nextChanInfo, err :=
-						gClient.GetChanInfo(gCtx, &lnrpc.ChanInfoRequest{
-							ChanId: chanId,
-						})
-					if err != nil {
-						panic(fmt.Sprintf("hop GetChanInfo failed:", err))
-					}
-					reverse := false
-					if nextChanInfo.Node2Pub == pubKey {
-						reverse = true
-					}
+			fmt.Printf("%s -> %s: %s\n",
+				alias0,
+				alias1,
+				sendRsp.Failure.Code.String())
 
-					if ignoreBadEdges {
-						// Append this edge to the ignoredEdges and re-route.
-						badEdge := &lnrpc.EdgeLocator{
-							ChannelId:        chanId,
-							DirectionReverse: reverse,
-						}
-						if gCfg.Verbose {
-							fmt.Printf("ignoring %v\n", badEdge)
-						}
-						if edgeLimit[badEdge] == 0 || amt < edgeLimit[badEdge] {
-							edgeLimit[badEdge] = amt
-						}
-					}
-					if gCfg.Verbose {
-						fmt.Println()
-					}
-					goto RetryQuery
+			// Is this the last hop?  If the last hop fails this route
+			// is done because we are forcing the last hop back to us ...
+			//
+			if int(errNdx) == len(route.Hops)-1 {
+				fmt.Println("can't ignore last hop")
+				goto FailedToRoute
+			}
+
+			chanId := route.Hops[errNdx].ChanId
+
+			nextChanInfo, err :=
+				gClient.GetChanInfo(gCtx, &lnrpc.ChanInfoRequest{
+					ChanId: chanId,
+				})
+			if err != nil {
+				panic(fmt.Sprintf("hop GetChanInfo failed:", err))
+			}
+
+			reverse := nextChanInfo.Node2Pub == pubKey
+
+			if ignoreBadEdges {
+				// Append this edge to the ignoredEdges and re-route.
+				badEdge := &lnrpc.EdgeLocator{
+					ChannelId:        chanId,
+					DirectionReverse: reverse,
+				}
+				if gCfg.Verbose {
+					fmt.Printf("ignoring %v\n", badEdge)
+				}
+				if edgeLimit[badEdge] == 0 || amt < edgeLimit[badEdge] {
+					edgeLimit[badEdge] = amt
 				}
 			}
-			panic(fmt.Sprintf("couldn't find matching hop"))
+			if gCfg.Verbose {
+				fmt.Println()
+			}
+			goto RetryQuery
 		} else {
 			fmt.Printf("PREIMAGE: %s\n", hex.EncodeToString(sendRsp.Preimage))
 			insertLoopAttempt(NewLoopAttempt(
