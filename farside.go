@@ -186,11 +186,19 @@ func farSide() {
 	}
 	sort.Sort(ByUtility(selected))
 	for _, nn := range selected {
-		fmt.Printf("%s %9.2f %2d [%4.2f, %3d]\n",
+		fmt.Printf("%s %9.2f %2d [%4.2f, %3d]",
 			nn.LightningNode.PubKey,
 			nn.CumulativeFee,
 			nn.NumHops,
 			math.Log10(float64(nn.Capacity()+1)),
-			nn.NumChan())
+			nn.NumChan(),
+		)
+		for ndx, addr := range nn.LightningNode.Addresses {
+			if ndx > 0 {
+				fmt.Printf(",")
+			}
+			fmt.Printf(" %s", addr.Addr)
+		}
+		fmt.Printf("\n")
 	}
 }
