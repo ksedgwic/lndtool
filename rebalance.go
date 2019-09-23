@@ -299,6 +299,12 @@ func doRebalance(amt int64, srcChanId, dstChanId uint64) bool {
 				"querying possible routes, fee limit %d sat, ignoring %d edges\n",
 				feeLimitFixed, len(badEdges))
 		}
+
+		// FIXME - Looks like there is a new argument to QueryRoutes:
+		// https://api.lightning.community/#grpc-request-queryroutesrequest
+		// Consider removing badEdges and trying use_mission_control
+		// instead ...
+
 		rsp, err := gClient.QueryRoutes(gCtx, &lnrpc.QueryRoutesRequest{
 			PubKey: dstPubKey,
 			Amt:    amt,
