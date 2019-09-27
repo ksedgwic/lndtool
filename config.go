@@ -298,6 +298,10 @@ func addCommands(parser *flags.Parser) {
 		"Finds nodes on the far side of the connected set",
 		"Finds nodes on the far side of the connected set",
 		&farSideCmd)
+	parser.AddCommand("graphstats",
+		"Summarizes connection graph statistics",
+		"Summarizes connection graph statistics",
+		&graphStatsCmd)
 	parser.AddCommand("rebalance",
 		"Balance a pair of channels with a loop transaction",
 		"Balance a pair of channels with a loop transaction",
@@ -357,6 +361,22 @@ func (cmd *FarSideCmd) Execute(args []string) error {
 
 func (cmd *FarSideCmd) RunCommand() error {
 	farSide()
+	return nil
+}
+
+type GraphStatsCmd struct {
+}
+
+var graphStatsCmd GraphStatsCmd
+
+func (cmd *GraphStatsCmd) Execute(args []string) error {
+	command = cmd
+	arguments = args
+	return nil
+}
+
+func (cmd *GraphStatsCmd) RunCommand() error {
+	graphStats()
 	return nil
 }
 
