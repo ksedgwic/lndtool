@@ -20,19 +20,33 @@ type nodeStats struct {
 }
 
 func graphStats() {
-	file, err := os.Create("graphstats.csv")
+	nsfile, err := os.Create("nodestats.csv")
 	if err != nil {
-		fmt.Println("os.Create", "graphstats.csv", "failed:", err)
+		fmt.Println("os.Create", "nodestats.csv", "failed:", err)
 		return
 	}
-	defer file.Close()
+	defer nsfile.Close()
 
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
+	nswriter := csv.NewWriter(nsfile)
+	defer nswriter.Flush()
 
 	// Write the CSV header
 	row := []string{"pubkey", "nchannels", "capacity", "base", "rate", "alias"}
-	err = writer.Write(row)
+	err = nswriter.Write(row)
+
+	csfile, err := os.Create("chanstats.csv")
+	if err != nil {
+		fmt.Println("os.Create", "chanstats.csv", "failed:", err)
+		return
+	}
+	defer csfile.Close()
+
+	cswriter := csv.NewWriter(csfile)
+	defer cswriter.Flush()
+
+	// Write the CSV header
+	row = []string{"chanid", "capacity", "base", "rate", "alias"}
+	err = cswriter.Write(row)
 
 	channelGraph, err := gClient.DescribeGraph(gCtx,
 		&lnrpc.ChannelGraphRequest{},
@@ -113,6 +127,17 @@ func graphStats() {
 			numChannels += 1
 			nodeChannels += 1
 
+			chanBase := float64((*policy).FeeBaseMsat) / 1000     // sat
+			chanRate := float64((*policy).FeeRateMilliMsat) / 100 // bps
+			row := []string{
+				strconv.FormatUint(channelEdge.ChannelId, 10), // channel id
+				strconv.FormatInt(channelEdge.Capacity, 10),   // capacity
+				strconv.FormatFloat(chanBase, 'f', -1, 64),    // base
+				strconv.FormatFloat(chanRate, 'f', -1, 64),    // rate
+				nodeInfo.Node.Alias,                           // alias
+			}
+			_ = cswriter.Write(row)
+
 			// Aggregate the capacity and weighted base and rate.
 			fmt.Println(
 				isNode1,
@@ -146,7 +171,7 @@ func graphStats() {
 				strconv.FormatFloat(weightedRate, 'f', -1, 64), // rate
 				nodeInfo.Node.Alias,                            // alias
 			}
-			_ = writer.Write(row)
+			_ = nswriter.Write(row)
 		}
 		fmt.Println()
 	}
