@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 
@@ -20,6 +21,53 @@ type nodeStats struct {
 }
 
 func graphStats() {
+
+	// Setup X parameters
+	minLogX := math.Log10(float64(1e3))
+	logStepX := float64(0.2)
+	logOffX := logStepX / 2
+	nBuckX := 31
+
+	// Allocate X threshold array
+	threshX := make([]float64, nBuckX)
+
+	// Fill the X threshold array
+	xx := minLogX
+	for ndx := 0; ndx < nBuckX; ndx += 1 {
+		threshX[ndx] = math.Pow(10, xx-logOffX)
+		xx += logStepX
+	}
+
+	// for ndx, xx := range threshX {
+	//     fmt.Println(ndx, xx)
+	// }
+
+	// Setup Y parameters
+	minLogY := math.Log10(float64(0.01))
+	logStepY := float64(0.2)
+	logOffY := logStepY / 2
+	nBuckY := 26
+
+	// Allocate Y threshold array
+	threshY := make([]float64, nBuckY)
+
+	// Fill the Y threshold array
+	yy := minLogY
+	for ndx := 0; ndx < nBuckY; ndx += 1 {
+		threshY[ndx] = math.Pow(10, yy-logOffY)
+		yy += logStepY
+	}
+
+	// for ndx, yy := range threshY {
+	//     fmt.Println(ndx, yy)
+	// }
+
+	// Allocate counts array.
+	chanRateCap := make([][]int, nBuckX)
+	for ndx := range chanRateCap {
+		chanRateCap[ndx] = make([]int, nBuckY)
+	}
+
 	nsfile, err := os.Create("nodestats.csv")
 	if err != nil {
 		fmt.Println("os.Create", "nodestats.csv", "failed:", err)
@@ -47,6 +95,20 @@ func graphStats() {
 	// Write the CSV header
 	row = []string{"chanid", "capacity", "base", "rate", "alias"}
 	err = cswriter.Write(row)
+
+	rcfile, err := os.Create("ratevcap.csv")
+	if err != nil {
+		fmt.Println("os.Create", "ratevcap.csv", "failed:", err)
+		return
+	}
+	defer rcfile.Close()
+
+	rcwriter := csv.NewWriter(rcfile)
+	defer rcwriter.Flush()
+
+	// Write the CSV header
+	row = []string{"capacity", "rate", "count"}
+	err = rcwriter.Write(row)
 
 	channelGraph, err := gClient.DescribeGraph(gCtx,
 		&lnrpc.ChannelGraphRequest{},
@@ -138,6 +200,31 @@ func graphStats() {
 			}
 			_ = cswriter.Write(row)
 
+			chanCap := float64(channelEdge.Capacity)
+			histXX := -1
+			if chanCap >= threshX[0] {
+				for ndx := 1; ndx < nBuckX; ndx++ {
+					if chanCap < threshX[ndx] {
+						histXX = ndx - 1
+						break
+					}
+				}
+			}
+			histYY := -1
+			if chanRate >= threshY[0] {
+				for ndx := 1; ndx < nBuckY; ndx++ {
+					if chanRate < threshY[ndx] {
+						histYY = ndx - 1
+						break
+					}
+				}
+			}
+
+			if histXX != -1 && histYY != -1 {
+				// fmt.Println(histXX, histYY)
+				chanRateCap[histXX][histYY] += 1
+			}
+
 			// Aggregate the capacity and weighted base and rate.
 			fmt.Println(
 				isNode1,
@@ -179,5 +266,22 @@ func graphStats() {
 		fmt.Println("NumNodes", numNodes)
 		fmt.Println("NumChannels", numChannels)
 		fmt.Println("MissingPolicy", missingPolicy)
+	}
+
+	xLogVal := minLogX
+	for xx := 0; xx < nBuckX; xx++ {
+		yLogVal := minLogY
+		for yy := 0; yy < nBuckY; yy++ {
+			fmt.Println(xx, yy, chanRateCap[xx][yy],
+				math.Pow(10, xLogVal), math.Pow(10, yLogVal))
+			row := []string{
+				strconv.FormatFloat(math.Pow(10, xLogVal), 'f', -1, 64),
+				strconv.FormatFloat(math.Pow(10, yLogVal), 'f', -1, 64),
+				strconv.Itoa(chanRateCap[xx][yy]),
+			}
+			_ = rcwriter.Write(row)
+			yLogVal += logStepY
+		}
+		xLogVal += logStepX
 	}
 }
